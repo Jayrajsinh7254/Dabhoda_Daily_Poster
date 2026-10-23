@@ -1,6 +1,15 @@
 // Audio-Video Recording and Composition Engine for Daily Aarti Videos
-// Output: 464 × 832 px (9:16 vertical, full-bleed video with overlay elements)
-import { ImageTransform } from './poster-generator';
+// Supports:
+// 1. 'template' mode: 1086 × 1448 px — Exact same authentic temple poster layout as Photo Poster
+// 2. 'story_9_16' mode: 464 × 832 px — Full-bleed 9:16 vertical video with temple overlays
+import {
+  POSTER_WIDTH,
+  POSTER_HEIGHT,
+  PHOTO_FRAME,
+  DATE_CONFIG,
+  WEEKDAY_CONFIG,
+  ImageTransform,
+} from './poster-generator';
 
 export type VideoLayoutMode = 'template' | 'story_9_16';
 
@@ -10,22 +19,33 @@ export interface AartiVideoOptions {
   transform: ImageTransform;
   layoutMode: VideoLayoutMode;
   logoImg?: HTMLImageElement | null;   // Temple circular logo (cropped from template)
+  idleImg?: HTMLImageElement | null;   // Placeholder idol image when no video is playing
 }
 
-// Final output canvas dimensions for aarti video poster
-export const AARTI_CANVAS_W = 464;
-export const AARTI_CANVAS_H = 832;
+// Canvas dimensions for both modes
+export const TEMPLATE_CANVAS_W = POSTER_WIDTH;  // 1086
+export const TEMPLATE_CANVAS_H = POSTER_HEIGHT; // 1448
+
+export const STORY_CANVAS_W = 464;
+export const STORY_CANVAS_H = 832;
+
+// Keep old exports for backwards compatibility
+export const AARTI_CANVAS_W = STORY_CANVAS_W;
+export const AARTI_CANVAS_H = STORY_CANVAS_H;
 
 // Logo crop region from daily-darshan-template.png (1086 × 1448 source)
-// The circular logo sits at approx x:380, y:0, w:326, h:230
 export const LOGO_CROP = { sx: 380, sy: 0, sw: 326, sh: 230 };
 
 /**
  * Universal rounded rectangle path helper
  */
-function roundRect(
+export function roundRect(
   ctx: CanvasRenderingContext2D,
-  x: number, y: number, w: number, h: number, r: number
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
 ) {
   if (typeof ctx.roundRect === 'function') {
     ctx.roundRect(x, y, w, h, r);
@@ -43,45 +63,196 @@ function roundRect(
 }
 
 /**
- * Draw the full-bleed video layer clipped to canvas
+ * Draw video inside the 1086 × 1448 Photo Poster frame
  */
-function drawVideoLayer(
+function drawTemplateVideo(
   ctx: CanvasRenderingContext2D,
-  videoEl: HTMLVideoElement,
-  transform: ImageTransform,
-  W: number,
-  H: number
+  videoEl: HTMLVideoElement | null,
+  idleImg: HTMLImageElement | null | undefined,
+  transform: ImageTransform
 ) {
-  const vidW = videoEl.videoWidth || W;
-  const vidH = videoEl.videoHeight || H;
-
-  const isRotated = transform.rotation % 180 !== 0;
-  const effectiveW = isRotated ? vidH : vidW;
-  const effectiveH = isRotated ? vidW : vidH;
-
-  const scaleToCover = Math.max(W / effectiveW, H / effectiveH);
-  const finalScale = scaleToCover * transform.zoom;
-
-  const drawW = vidW * finalScale;
-  const drawH = vidH * finalScale;
+  const { left, top, width, height, cornerRadius } = PHOTO_FRAME;
 
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0, 0, W, H);
+  roundRect(ctx, left, top, width, height, cornerRadius);
   ctx.clip();
-  ctx.translate(W / 2 + transform.panX, H / 2 + transform.panY);
-  ctx.rotate((transform.rotation * Math.PI) / 180);
-  try {
-    ctx.drawImage(videoEl, -drawW / 2, -drawH / 2, drawW, drawH);
-  } catch { /* ignore seek errors */ }
+
+  // Dark frame background
+  ctx.fillStyle = '#1e1b18';
+  ctx.fillRect(left, top, width, height);
+
+  const frameCenterX = left + width / 2;
+  const frameCenterY = top + height / 2;
+
+  if (videoEl && videoEl.readyState >= 2) {
+    const vidW = videoEl.videoWidth || width;
+    const vidH = videoEl.videoHeight || height;
+
+    const isRotated = transform.rotation % 180 !== 0;
+    const effectiveW = isRotated ? vidH : vidW;
+    const effectiveH = isRotated ? vidW : vidH;
+
+    const scaleToCover = Math.max(width / effectiveW, height / effectiveH);
+    const finalScale = scaleToCover * transform.zoom;
+
+    const drawW = vidW * finalScale;
+    const drawH = vidH * finalScale;
+
+    ctx.translate(frameCenterX + transform.panX, frameCenterY + transform.panY);
+    ctx.rotate((transform.rotation * Math.PI) / 180);
+    try {
+      ctx.drawImage(videoEl, -drawW / 2, -drawH / 2, drawW, drawH);
+    } catch {
+      /* ignore seek race conditions */
+    }
+  } else if (idleImg && idleImg.complete && idleImg.naturalWidth > 0) {
+    // Draw placeholder idol when idle
+    const imgW = idleImg.naturalWidth;
+    const imgH = idleImg.naturalHeight;
+    const scaleToCover = Math.max(width / imgW, height / imgH);
+    const finalScale = scaleToCover * transform.zoom;
+    const drawW = imgW * finalScale;
+    const drawH = imgH * finalScale;
+
+    ctx.translate(frameCenterX + transform.panX, frameCenterY + transform.panY);
+    ctx.rotate((transform.rotation * Math.PI) / 180);
+    ctx.drawImage(idleImg, -drawW / 2, -drawH / 2, drawW, drawH);
+  } else {
+    // Elegant fallback pattern
+    ctx.fillStyle = '#292524';
+    ctx.fillRect(left, top, width, height);
+    ctx.font = "bold 28px 'Noto Sans Gujarati', sans-serif";
+    ctx.fillStyle = '#fbbf24';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🪔 વિડીયો પ્લે / અપલોડ કરો', frameCenterX, frameCenterY);
+  }
+
   ctx.restore();
 }
 
 /**
- * Draw top + bottom gradient overlay darkening bands
+ * Draw 1086 × 1448 Temple Poster Layout (Same as Photo Poster)
  */
-function drawGradientBands(ctx: CanvasRenderingContext2D, W: number, H: number) {
-  // Top band — heavier to accommodate temple title block
+function renderTemplateLayout(
+  ctx: CanvasRenderingContext2D,
+  videoEl: HTMLVideoElement | null,
+  overlayImg: HTMLImageElement | null,
+  options: AartiVideoOptions
+) {
+  const { aartiName, displayDate, transform, idleImg } = options;
+
+  // 1. Fill canvas with the warm cream temple background
+  ctx.fillStyle = '#fef5e3';
+  ctx.fillRect(0, 0, TEMPLATE_CANVAS_W, TEMPLATE_CANVAS_H);
+
+  // 2. Draw user video/placeholder clipped to the rounded photo frame
+  drawTemplateVideo(ctx, videoEl, idleImg, transform);
+
+  // 3. Draw master template overlay (frames, logo, typography, icons, bells)
+  if (overlayImg && overlayImg.complete && overlayImg.naturalWidth > 0) {
+    ctx.drawImage(overlayImg, 0, 0, TEMPLATE_CANVAS_W, TEMPLATE_CANVAS_H);
+  }
+
+  // 4. Draw Dynamic Date text in the date pill
+  ctx.save();
+  ctx.fillStyle = DATE_CONFIG.color;
+  ctx.font = `${DATE_CONFIG.fontWeight} ${DATE_CONFIG.fontSize}px ${DATE_CONFIG.fontFamily}`;
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.fillText(displayDate, DATE_CONFIG.x, DATE_CONFIG.y);
+  ctx.restore();
+
+  // 5. Draw Dynamic Aarti Name in the red ribbon
+  ctx.save();
+  ctx.fillStyle = WEEKDAY_CONFIG.color;
+  ctx.font = `${WEEKDAY_CONFIG.fontWeight} ${WEEKDAY_CONFIG.fontSize}px ${WEEKDAY_CONFIG.fontFamily}`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = WEEKDAY_CONFIG.align;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+  ctx.shadowBlur = 3;
+  ctx.shadowOffsetY = 1;
+  ctx.fillText(aartiName, WEEKDAY_CONFIG.x, WEEKDAY_CONFIG.y);
+  ctx.restore();
+}
+
+/**
+ * Draw the full-bleed video layer for 464 × 832
+ */
+function drawStoryVideoLayer(
+  ctx: CanvasRenderingContext2D,
+  videoEl: HTMLVideoElement | null,
+  idleImg: HTMLImageElement | null | undefined,
+  transform: ImageTransform,
+  W: number,
+  H: number
+) {
+  if (videoEl && videoEl.readyState >= 2) {
+    const vidW = videoEl.videoWidth || W;
+    const vidH = videoEl.videoHeight || H;
+
+    const isRotated = transform.rotation % 180 !== 0;
+    const effectiveW = isRotated ? vidH : vidW;
+    const effectiveH = isRotated ? vidW : vidH;
+
+    const scaleToCover = Math.max(W / effectiveW, H / effectiveH);
+    const finalScale = scaleToCover * transform.zoom;
+
+    const drawW = vidW * finalScale;
+    const drawH = vidH * finalScale;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.clip();
+    ctx.translate(W / 2 + transform.panX, H / 2 + transform.panY);
+    ctx.rotate((transform.rotation * Math.PI) / 180);
+    try {
+      ctx.drawImage(videoEl, -drawW / 2, -drawH / 2, drawW, drawH);
+    } catch {
+      /* ignore seek errors */
+    }
+    ctx.restore();
+  } else if (idleImg && idleImg.complete && idleImg.naturalWidth > 0) {
+    const imgW = idleImg.naturalWidth;
+    const imgH = idleImg.naturalHeight;
+    const scaleToCover = Math.max(W / imgW, H / imgH);
+    const finalScale = scaleToCover * transform.zoom;
+    const drawW = imgW * finalScale;
+    const drawH = imgH * finalScale;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.clip();
+    ctx.translate(W / 2 + transform.panX, H / 2 + transform.panY);
+    ctx.rotate((transform.rotation * Math.PI) / 180);
+    ctx.drawImage(idleImg, -drawW / 2, -drawH / 2, drawW, drawH);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = '#1c1917';
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+/**
+ * Draw 464 × 832 Story / Reels Layout
+ */
+function renderStoryLayout(
+  ctx: CanvasRenderingContext2D,
+  videoEl: HTMLVideoElement | null,
+  options: AartiVideoOptions
+) {
+  const { aartiName, displayDate, transform, logoImg, idleImg } = options;
+  const W = STORY_CANVAS_W;
+  const H = STORY_CANVAS_H;
+  const cx = W / 2;
+
+  // 1. Background video / idol
+  drawStoryVideoLayer(ctx, videoEl, idleImg, transform, W, H);
+
+  // 2. Top + bottom gradient bands
   const topGrad = ctx.createLinearGradient(0, 0, 0, 260);
   topGrad.addColorStop(0, 'rgba(0,0,0,0.88)');
   topGrad.addColorStop(0.55, 'rgba(0,0,0,0.55)');
@@ -89,33 +260,19 @@ function drawGradientBands(ctx: CanvasRenderingContext2D, W: number, H: number) 
   ctx.fillStyle = topGrad;
   ctx.fillRect(0, 0, W, 260);
 
-  // Bottom band
   const botGrad = ctx.createLinearGradient(0, H - 250, 0, H);
   botGrad.addColorStop(0, 'rgba(0,0,0,0)');
   botGrad.addColorStop(0.3, 'rgba(0,0,0,0.6)');
   botGrad.addColorStop(1, 'rgba(0,0,0,0.92)');
   ctx.fillStyle = botGrad;
   ctx.fillRect(0, H - 250, W, 250);
-}
 
-/**
- * Draw top temple header: logo + temple name + aarti subtitle
- */
-function drawTopHeader(
-  ctx: CanvasRenderingContext2D,
-  aartiName: string,
-  W: number,
-  logoImg: HTMLImageElement | null | undefined
-) {
-  const cx = W / 2;
-
-  // ── Circular Logo ──
+  // 3. Top Header: Circular Logo
   const logoSize = 72;
-  const logoY = 10;
+  const logoY = 12;
 
-  if (logoImg) {
+  if (logoImg && logoImg.complete && logoImg.naturalWidth > 0) {
     ctx.save();
-    // Clip to a circle for clean logo
     ctx.beginPath();
     ctx.arc(cx, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
     ctx.clip();
@@ -126,7 +283,6 @@ function drawTopHeader(
     );
     ctx.restore();
 
-    // Gold circle border
     ctx.save();
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 2.5;
@@ -134,27 +290,11 @@ function drawTopHeader(
     ctx.arc(cx, logoY + logoSize / 2, logoSize / 2 + 1, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
-  } else {
-    // Fallback: draw a flame emoji in a circle
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(251,191,36,0.2)';
-    ctx.fill();
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.font = '36px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#f59e0b';
-    ctx.fillText('🔱', cx, logoY + logoSize / 2);
-    ctx.restore();
   }
 
   const afterLogo = logoY + logoSize + 6;
 
-  // ── Top mantras: left & right ──
+  // Top mantras
   ctx.save();
   ctx.font = "bold 11px 'Noto Sans Gujarati', sans-serif";
   ctx.fillStyle = '#fde68a';
@@ -162,12 +302,12 @@ function drawTopHeader(
   ctx.shadowBlur = 4;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
-  ctx.fillText('॥ જય શ્રી રામ ॥', 8, 18);
+  ctx.fillText('॥ જય શ્રી રામ ॥', 10, 18);
   ctx.textAlign = 'right';
-  ctx.fillText('॥ જય શ્રી હનુમાન ॥', W - 8, 18);
+  ctx.fillText('॥ જય શ્રી હનુમાન ॥', W - 10, 18);
   ctx.restore();
 
-  // ── Temple name: "શ્રી ડભોડીયા હનુમાનજી" ──
+  // Temple Name
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
@@ -178,7 +318,7 @@ function drawTopHeader(
   ctx.fillText('શ્રી ડભોડીયા હનુમાનજી', cx, afterLogo);
   ctx.restore();
 
-  // ── Subtitle: Aarti type centered ──
+  // Subtitle
   ctx.save();
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
@@ -189,7 +329,7 @@ function drawTopHeader(
   ctx.fillText('🪔 ' + aartiName, cx, afterLogo + 28);
   ctx.restore();
 
-  // ── Thin gold divider line ──
+  // Thin gold divider
   const divY = afterLogo + 52;
   ctx.save();
   const divGrad = ctx.createLinearGradient(20, 0, W - 20, 0);
@@ -204,22 +344,10 @@ function drawTopHeader(
   ctx.lineTo(W - 20, divY);
   ctx.stroke();
   ctx.restore();
-}
 
-/**
- * Draw bottom info section: date pill + aarti ribbon + social handles
- */
-function drawBottomInfo(
-  ctx: CanvasRenderingContext2D,
-  aartiName: string,
-  displayDate: string,
-  W: number,
-  H: number
-) {
-  const cx = W / 2;
+  // 4. Bottom Info
   const padX = 16;
-
-  // ── Social handle row (above date pill) ──
+  // Social handle row
   ctx.save();
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
@@ -230,7 +358,7 @@ function drawBottomInfo(
   ctx.fillText('@dabhodiyahanumanji_official', cx, H - 190);
   ctx.restore();
 
-  // ── Date Pill ──
+  // Date Pill
   const pillW = W - padX * 2;
   const pillH = 40;
   const pillX = padX;
@@ -239,49 +367,22 @@ function drawBottomInfo(
   ctx.save();
   ctx.beginPath();
   roundRect(ctx, pillX, pillY, pillW, pillH, 10);
-  ctx.fillStyle = 'rgba(251,191,36,0.93)';
+  ctx.fillStyle = 'rgba(251,191,36,0.95)';
   ctx.shadowColor = 'rgba(0,0,0,0.35)';
   ctx.shadowBlur = 8;
   ctx.fill();
   ctx.restore();
 
-  // Calendar icon (tiny box)
-  const icX = pillX + 12;
-  const icY = pillY + 8;
-  const icS = 24;
-  ctx.save();
-  ctx.fillStyle = '#92400e';
-  ctx.beginPath();
-  roundRect(ctx, icX, icY, icS, icS, 3);
-  ctx.fill();
-  // lines
-  ctx.strokeStyle = '#fde68a';
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(icX + 3, icY + 8);
-  ctx.lineTo(icX + icS - 3, icY + 8);
-  ctx.stroke();
-  // dots
-  ctx.fillStyle = '#fde68a';
-  for (const [dx, dy] of [[6, 15], [12, 15], [18, 15]]) {
-    ctx.beginPath();
-    ctx.arc(icX + dx, icY + dy, 1.8, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
-
-  // Date text in pill — centered in remaining space
+  // Date text in pill
   ctx.save();
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
   ctx.font = "bold 16px 'Georgia', 'Times New Roman', serif";
   ctx.fillStyle = '#1c1917';
-  ctx.shadowColor = 'transparent';
-  const textX = pillX + icS + 20 + (pillW - icS - 20) / 2;
-  ctx.fillText(`તારીખ : ${displayDate}`, textX, pillY + pillH / 2);
+  ctx.fillText(`તારીખ : ${displayDate}`, cx, pillY + pillH / 2);
   ctx.restore();
 
-  // ── Aarti Name — Red Ribbon ──
+  // Aarti Name Red Ribbon
   const ribY = H - 126;
   const ribH = 46;
 
@@ -296,7 +397,6 @@ function drawBottomInfo(
   ctx.fillStyle = ribGrad;
   ctx.fill();
 
-  // Gold top & bottom border lines
   ctx.strokeStyle = '#f59e0b';
   ctx.lineWidth = 1.8;
   [[0, ribY], [0, ribY + ribH]].forEach(([x, y]) => {
@@ -306,7 +406,6 @@ function drawBottomInfo(
     ctx.stroke();
   });
 
-  // Aarti text — CENTERED
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = "bold 21px 'Noto Sans Gujarati', 'Shruti', sans-serif";
@@ -316,74 +415,57 @@ function drawBottomInfo(
   ctx.fillText(`🪔  ${aartiName}`, cx, ribY + ribH / 2);
   ctx.restore();
 
-  // ── Social icons row at the very bottom ──
+  // Bottom strip: Handles & WhatsApp
   const iconsY = H - 72;
   const iconRowH = 62;
 
-  // Background strip
   ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillStyle = 'rgba(0,0,0,0.72)';
   ctx.fillRect(0, iconsY, W, iconRowH);
-  ctx.restore();
 
-  // Divider between left (handles) and right (WhatsApp)
-  ctx.save();
   ctx.strokeStyle = 'rgba(251,191,36,0.4)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(W / 2, iconsY + 8);
   ctx.lineTo(W / 2, iconsY + iconRowH - 8);
   ctx.stroke();
-  ctx.restore();
 
-  // Left: social handles
-  const handles = [
-    { icon: '📷', text: '@DABHODIYAHANUMANJI_OFFICIAL' },
-    { icon: '▶', text: '@DABHODIYAHANUMANJI_OFFICIAL' },
-  ];
-  ctx.save();
+  // Left handles
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
   ctx.shadowColor = 'rgba(0,0,0,0.5)';
   ctx.shadowBlur = 3;
-  handles.forEach((h, i) => {
-    const y = iconsY + 16 + i * 20;
-    ctx.font = "bold 9px 'Outfit', sans-serif";
-    ctx.fillStyle = '#f59e0b';
-    ctx.fillText(h.icon, 8, y);
-    ctx.font = "500 8.5px 'Outfit', sans-serif";
-    ctx.fillStyle = '#e5e7eb';
-    ctx.fillText(h.text, 22, y);
-  });
-  ctx.restore();
-
-  // Right: WhatsApp number
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(0,0,0,0.5)';
-  ctx.shadowBlur = 3;
 
   ctx.font = "bold 9px 'Outfit', sans-serif";
+  ctx.fillStyle = '#f59e0b';
+  ctx.fillText('📷', 8, iconsY + 18);
+  ctx.font = "500 8.5px 'Outfit', sans-serif";
+  ctx.fillStyle = '#e5e7eb';
+  ctx.fillText('@DABHODIYAHANUMANJI_OFFICIAL', 22, iconsY + 18);
+
+  ctx.font = "bold 9px 'Outfit', sans-serif";
+  ctx.fillStyle = '#f59e0b';
+  ctx.fillText('▶', 8, iconsY + 38);
+  ctx.font = "500 8.5px 'Outfit', sans-serif";
+  ctx.fillStyle = '#e5e7eb';
+  ctx.fillText('@DABHODIYAHANUMANJI_OFFICIAL', 22, iconsY + 38);
+
+  // Right WhatsApp
+  ctx.textAlign = 'center';
+  ctx.font = "bold 9px 'Outfit', sans-serif";
   ctx.fillStyle = '#4ade80';
-  ctx.fillText('📱 WhatsApp', W * 0.75, iconsY + 16);
+  ctx.fillText('📱 WhatsApp', W * 0.75, iconsY + 18);
 
   ctx.font = "bold 11px 'Georgia', serif";
   ctx.fillStyle = '#ffffff';
-  ctx.fillText('MO : 9091801818', W * 0.75, iconsY + 35);
+  ctx.fillText('MO : 9091801818', W * 0.75, iconsY + 38);
   ctx.restore();
-}
 
-/**
- * Draw the outer gold border frame
- */
-function drawBorder(ctx: CanvasRenderingContext2D, W: number, H: number) {
+  // Outer gold border frame
   ctx.save();
-  // Outer amber border
   ctx.strokeStyle = '#f59e0b';
   ctx.lineWidth = 3.5;
   ctx.strokeRect(1.75, 1.75, W - 3.5, H - 3.5);
-  // Inner thin border
   ctx.strokeStyle = 'rgba(251,191,36,0.4)';
   ctx.lineWidth = 1;
   ctx.strokeRect(6, 6, W - 12, H - 12);
@@ -391,36 +473,20 @@ function drawBorder(ctx: CanvasRenderingContext2D, W: number, H: number) {
 }
 
 /**
- * Main render function — draws one frame of the 464×832 aarti video poster.
- * videoEl may be null when rendering the idle/placeholder state.
+ * Main render function — renders one frame of Aarti video poster.
+ * Supports both 'template' (1086×1448) and 'story_9_16' (464×832) modes.
  */
 export function renderAartiFrame(
   ctx: CanvasRenderingContext2D,
   videoEl: HTMLVideoElement | null,
-  _overlayImg: HTMLImageElement | null, // kept for API compat, unused
+  overlayImg: HTMLImageElement | null,
   options: AartiVideoOptions
 ): void {
-  const { aartiName, displayDate, transform, logoImg } = options;
-  const W = AARTI_CANVAS_W;
-  const H = AARTI_CANVAS_H;
-
-  // 1. Background (drawn by caller when idle; here only if needed)
-  // Full-bleed video
-  if (videoEl && videoEl.readyState >= 2) {
-    drawVideoLayer(ctx, videoEl, transform, W, H);
+  if (options.layoutMode === 'template') {
+    renderTemplateLayout(ctx, videoEl, overlayImg, options);
+  } else {
+    renderStoryLayout(ctx, videoEl, options);
   }
-
-  // 3. Gradient bands
-  drawGradientBands(ctx, W, H);
-
-  // 4. Top header (logo + temple name + aarti)
-  drawTopHeader(ctx, aartiName, W, logoImg);
-
-  // 5. Bottom info (date pill + ribbon + social)
-  drawBottomInfo(ctx, aartiName, displayDate, W, H);
-
-  // 6. Gold border frame
-  drawBorder(ctx, W, H);
 }
 
 /**
@@ -459,6 +525,13 @@ export function recordAartiVideo(
 ): Promise<{ blob: Blob; filename: string }> {
   return new Promise(async (resolve, reject) => {
     try {
+      const isTemplate = options.layoutMode === 'template';
+      const targetW = isTemplate ? TEMPLATE_CANVAS_W : STORY_CANVAS_W;
+      const targetH = isTemplate ? TEMPLATE_CANVAS_H : STORY_CANVAS_H;
+
+      canvas.width = targetW;
+      canvas.height = targetH;
+
       const ctx = canvas.getContext('2d', { alpha: false });
       if (!ctx) throw new Error('Could not acquire canvas context');
 
@@ -484,27 +557,35 @@ export function recordAartiVideo(
           source.connect(audioCtx.destination);
           audioTracks = dest.stream.getAudioTracks();
         }
-      } catch (e) { console.warn('Audio capture:', e); }
+      } catch (e) {
+        console.warn('Audio capture note:', e);
+      }
 
       const combinedStream = new MediaStream([...captureStream.getVideoTracks(), ...audioTracks]);
-      const recOpts: MediaRecorderOptions = { videoBitsPerSecond: 4_500_000 };
+      const recOpts: MediaRecorderOptions = { videoBitsPerSecond: isTemplate ? 6_000_000 : 4_500_000 };
       if (mimeType) recOpts.mimeType = mimeType;
 
       const recorder = new MediaRecorder(combinedStream, recOpts);
       const chunks: Blob[] = [];
 
-      recorder.ondataavailable = (e) => { if (e.data?.size > 0) chunks.push(e.data); };
+      recorder.ondataavailable = (e) => {
+        if (e.data?.size > 0) chunks.push(e.data);
+      };
       recorder.onstop = () => {
         const blob = new Blob(chunks, { type: mimeType || 'video/mp4' });
         const cleanDate = options.displayDate.replace(/\//g, '-');
-        const filename = `Dabhodiya-${options.aartiName.replace(/\s+/g, '')}-${cleanDate}.${extension}`;
+        const layoutSuffix = isTemplate ? 'Poster' : 'Reel';
+        const filename = `Dabhodiya-${options.aartiName.replace(/\s+/g, '')}-${cleanDate}-${layoutSuffix}.${extension}`;
         resolve({ blob, filename });
       };
       recorder.onerror = reject;
 
       videoEl.currentTime = startTimeSec;
       await new Promise<void>((r) => {
-        const fn = () => { videoEl.removeEventListener('seeked', fn); r(); };
+        const fn = () => {
+          videoEl.removeEventListener('seeked', fn);
+          r();
+        };
         videoEl.addEventListener('seeked', fn);
         setTimeout(fn, 600);
       });
@@ -532,10 +613,15 @@ export function recordAartiVideo(
         const cur = videoEl.currentTime - startTimeSec;
         const pct = Math.min(100, Math.max(0, Math.round((cur / totalDuration) * 100)));
         onProgress?.(pct, Math.min(cur, totalDuration), totalDuration);
-        if (videoEl.currentTime >= endTimeSec || videoEl.ended) { stop(); return; }
+        if (videoEl.currentTime >= endTimeSec || videoEl.ended) {
+          stop();
+          return;
+        }
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
-    } catch (err) { reject(err); }
+    } catch (err) {
+      reject(err);
+    }
   });
 }
