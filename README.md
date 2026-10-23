@@ -10,17 +10,23 @@ The app allows the temple's media managers and sevaks to upload daily idol photo
 
 - **100% Authentic Template Preservation**: Preserves the temple's official 1086 × 1448 px design, including Gujarati calligraphy ("શ્રી ડભોડીયા હનુમાનજી", "આજ ના દર્શન"), temple bells, ornate border motifs, lotuses, and contact information.
 - **Client-Side Image Composition**: Uses HTML5 Canvas for real-time composition. Photos never leave the user's device—no servers, databases, or cloud storage involved.
+- **Daily Aarti Video Generator (15-30s Reels & Status)**:
+  - Upload temple aarti videos (MP4, MOV, WebM) directly from mobile cameras.
+  - Video Trimming: Customize 15s or 30s clips tailored for WhatsApp Status.
+  - Preset Aarti selection: **મંગળાઆરતી (Mangla Aarti)**, શ્રૃંગાર આરતી, રાજભોગ આરતી, સંધ્યા આરતી, શયન આરતી.
+  - Audio mixing: Captures and preserves temple aarti chanting and bell audio.
+  - Export in Classic Temple Frame (1086×1448) or Full-Screen 9:16 Story (1080×1920).
 - **Automatic IST Date & Gujarati Weekday**: Computes the exact date and day in the `Asia/Kolkata` timezone with correct Gujarati names:
   - રવિવાર, સોમવાર, મંગળવાર, બુધવાર, ગુરુવાર, શુક્રવાર, શનિવાર
 - **Date Override Option**: Convenient date picker to schedule posters for festivals or next-day darshan in advance.
-- **Interactive Photo Positioning**:
+- **Interactive Photo & Video Positioning**:
   - Direct touch / mouse drag & pan inside the canvas preview.
   - Smooth zoom slider (1× to 3×).
   - Fine directional controls (Up, Down, Left, Right).
   - 90° clockwise rotation button.
   - One-click "Reset Alignment" button.
 - **Pre-Loaded Default Idol**: Pre-loaded with the authentic idol photograph so the poster is ready to inspect immediately upon loading.
-- **High-Resolution Export**: Exports lossless 1086 × 1448 px PNG files optimized for WhatsApp Status, Instagram, and Facebook.
+- **High-Resolution Export**: Exports lossless 1086 × 1448 px PNG files and HD video files optimized for WhatsApp Status, Instagram, and Facebook.
 - **Mobile-First Devotional UI**: Designed with warm saffron/amber tones (`#f59e0b`, `#dc2626`, `#0f1117`), intuitive controls, full-screen preview modal, and accessible typography.
 
 ---

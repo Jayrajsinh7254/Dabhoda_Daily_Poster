@@ -33,7 +33,7 @@ import {
   downloadCanvasAsPng,
 } from "@/lib/poster-generator";
 
-export default function PosterGenerator() {
+export default function PosterGenerator({ hideHeader = false }: { hideHeader?: boolean } = {}) {
   // Current date info in Asia/Kolkata (populated on client mount)
   const [dateInfo, setDateInfo] = useState(() => ({
     isoDate: "2026-10-14",
@@ -266,19 +266,21 @@ export default function PosterGenerator() {
   return (
     <div className="w-full max-w-6xl mx-auto px-4 py-6 md:py-10">
       {/* Top Banner / Sacred Temple Header */}
-      <header className="text-center mb-8">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-amber-500/10 via-orange-500/20 to-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium tracking-wide uppercase mb-3">
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>Asia/Kolkata IST • Official Media Generator</span>
-        </div>
+      {!hideHeader && (
+        <header className="text-center mb-8">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-amber-500/10 via-orange-500/20 to-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-medium tracking-wide uppercase mb-3">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Asia/Kolkata IST • Official Media Generator</span>
+          </div>
 
-        <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-orange-300 to-amber-100 font-devotional mb-2">
-          શ્રી ડભોડીયા હનુમાનજી
-        </h1>
-        <p className="text-base sm:text-lg font-medium text-orange-200/90 font-gujarati">
-          દૈનિક દર્શન પોસ્ટર જનરેટર (Daily Darshan Poster Generator)
-        </p>
-      </header>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-orange-300 to-amber-100 font-devotional mb-2">
+            શ્રી ડભોડીયા હનુમાનજી
+          </h1>
+          <p className="text-base sm:text-lg font-medium text-orange-200/90 font-gujarati">
+            દૈનિક દર્શન પોસ્ટર જનરેટર (Daily Darshan Poster Generator)
+          </p>
+        </header>
+      )}
 
       {/* Main Grid: Left Controls, Right Preview */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
