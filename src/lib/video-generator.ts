@@ -1,24 +1,19 @@
 // Audio-Video Recording and Composition Engine for Daily Aarti Videos
-import { POSTER_WIDTH, POSTER_HEIGHT, PHOTO_FRAME, DATE_CONFIG, ImageTransform } from './poster-generator';
-
-export const AARTI_RIBBON_CONFIG = {
-  x: 552,
-  y: 1251,
-  fontSize: 38,
-  fontFamily: "'Noto Sans Gujarati', 'Shruti', 'Gujarati MT', sans-serif",
-  color: '#ffffff',
-  fontWeight: 'bold',
-  align: 'center' as CanvasTextAlign,
-};
+// Output: 464 × 832 px (9:16 vertical, full-bleed video with overlay elements)
+import { ImageTransform } from './poster-generator';
 
 export type VideoLayoutMode = 'template' | 'story_9_16';
 
 export interface AartiVideoOptions {
-  aartiName: string; // e.g. "મંગળાઆરતી", "સંધ્યા આરતી"
-  displayDate: string; // DD/MM/YYYY
+  aartiName: string;     // e.g. "મંગળાઆરતી", "સંધ્યા આરતી"
+  displayDate: string;   // DD/MM/YYYY
   transform: ImageTransform;
   layoutMode: VideoLayoutMode;
 }
+
+// Final output canvas dimensions for aarti video
+export const AARTI_CANVAS_W = 464;
+export const AARTI_CANVAS_H = 832;
 
 /**
  * Universal rounded rectangle path helper
@@ -46,183 +41,228 @@ function drawRoundedRect(
   }
 }
 
-// Exact 464 x 832 frame specified for daily aarti videos
-export const AARTI_VIDEO_FRAME = {
-  left: 311,
-  top: 427,
-  width: 464,
-  height: 832,
-  cornerRadius: 14,
-};
+/**
+ * Measure text width safely, with a fallback
+ */
+function measureText(ctx: CanvasRenderingContext2D, text: string): number {
+  try {
+    return ctx.measureText(text).width;
+  } catch {
+    return text.length * 16;
+  }
+}
 
+/**
+ * Render a single frame of the Aarti video composite onto the canvas (464 × 832)
+ * The video is full-bleed; overlays sit on top.
+ */
 export function renderAartiFrame(
   ctx: CanvasRenderingContext2D,
   videoEl: HTMLVideoElement,
-  overlayImg: HTMLImageElement | null,
+  _overlayImg: HTMLImageElement | null, // kept for API compatibility, unused
   options: AartiVideoOptions
 ): void {
-  const { aartiName, displayDate, transform, layoutMode } = options;
+  const { aartiName, displayDate, transform } = options;
+  const W = AARTI_CANVAS_W;
+  const H = AARTI_CANVAS_H;
 
-  if (layoutMode === 'template') {
-    // ----------------------------------------------------
-    // 1. CLASSIC TEMPLE FRAME (464 × 832 VIDEO WINDOW)
-    // ----------------------------------------------------
-    ctx.fillStyle = '#fef5e3';
-    ctx.fillRect(0, 0, POSTER_WIDTH, POSTER_HEIGHT);
+  // ─────────────────────────────────────────────────────────────
+  // 1. BLACK BACKGROUND (visible if video doesn't cover)
+  // ─────────────────────────────────────────────────────────────
+  ctx.fillStyle = '#0c0a08';
+  ctx.fillRect(0, 0, W, H);
 
-    // Draw Video Frame clipped to the exact 464 × 832 window
+  // ─────────────────────────────────────────────────────────────
+  // 2. FULL-BLEED VIDEO (cover-fill, centered)
+  // ─────────────────────────────────────────────────────────────
+  if (videoEl && videoEl.readyState >= 2) {
     ctx.save();
+    // Clip to canvas bounds
     ctx.beginPath();
-    const { left, top, width, height, cornerRadius } = AARTI_VIDEO_FRAME;
-    drawRoundedRect(ctx, left, top, width, height, cornerRadius);
+    ctx.rect(0, 0, W, H);
     ctx.clip();
 
-    ctx.fillStyle = '#181512';
-    ctx.fillRect(left, top, width, height);
-
-    const frameCenterX = left + width / 2;
-    const frameCenterY = top + height / 2;
-
-    ctx.translate(frameCenterX + transform.panX, frameCenterY + transform.panY);
-    ctx.rotate((transform.rotation * Math.PI) / 180);
-
-    const vidW = videoEl.videoWidth || 464;
-    const vidH = videoEl.videoHeight || 832;
+    const vidW = videoEl.videoWidth || W;
+    const vidH = videoEl.videoHeight || H;
 
     const isRotated = transform.rotation % 180 !== 0;
     const effectiveW = isRotated ? vidH : vidW;
     const effectiveH = isRotated ? vidW : vidH;
 
-    const scaleToCover = Math.max(width / effectiveW, height / effectiveH);
+    // Cover-scale: fill entire canvas
+    const scaleToCover = Math.max(W / effectiveW, H / effectiveH);
     const finalScale = scaleToCover * transform.zoom;
 
     const drawW = vidW * finalScale;
     const drawH = vidH * finalScale;
 
-    try {
-      ctx.drawImage(videoEl, -drawW / 2, -drawH / 2, drawW, drawH);
-    } catch {
-      // Ignore frame read if video is seeking
-    }
-    ctx.restore();
-
-    // Draw Master Temple Overlay on top
-    if (overlayImg) {
-      ctx.drawImage(overlayImg, 0, 0, POSTER_WIDTH, POSTER_HEIGHT);
-    }
-
-    // Dynamic Date Text in Date Pill
-    ctx.save();
-    ctx.fillStyle = DATE_CONFIG.color;
-    ctx.font = `${DATE_CONFIG.fontWeight} ${DATE_CONFIG.fontSize}px ${DATE_CONFIG.fontFamily}`;
-    ctx.textBaseline = 'alphabetic';
-    ctx.textAlign = 'left';
-    ctx.fillText(displayDate, DATE_CONFIG.x, DATE_CONFIG.y);
-    ctx.restore();
-
-    // Dynamic Aarti Name in Red Ribbon
-    ctx.save();
-    ctx.fillStyle = AARTI_RIBBON_CONFIG.color;
-    ctx.font = `${AARTI_RIBBON_CONFIG.fontWeight} ${AARTI_RIBBON_CONFIG.fontSize}px ${AARTI_RIBBON_CONFIG.fontFamily}`;
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = AARTI_RIBBON_CONFIG.align;
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-    ctx.shadowBlur = 3;
-    ctx.shadowOffsetY = 1;
-    ctx.fillText(aartiName, AARTI_RIBBON_CONFIG.x, AARTI_RIBBON_CONFIG.y);
-    ctx.restore();
-  } else {
-    // ----------------------------------------------------
-    // 2. FULL-SCREEN 9:16 VERTICAL STORY / REEL (1080 × 1920)
-    // ----------------------------------------------------
-    const targetW = 1080;
-    const targetH = 1920;
-
-    ctx.fillStyle = '#0a0a0c';
-    ctx.fillRect(0, 0, targetW, targetH);
-
-    // Full-bleed video
-    ctx.save();
-    ctx.translate(targetW / 2 + transform.panX, targetH / 2 + transform.panY);
+    ctx.translate(W / 2 + transform.panX, H / 2 + transform.panY);
     ctx.rotate((transform.rotation * Math.PI) / 180);
 
-    const vidW = videoEl.videoWidth || 1080;
-    const vidH = videoEl.videoHeight || 1920;
-
-    const isRotated = transform.rotation % 180 !== 0;
-    const effectiveW = isRotated ? vidH : vidW;
-    const effectiveH = isRotated ? vidW : vidH;
-
-    const scaleToCover = Math.max(targetW / effectiveW, targetH / effectiveH);
-    const finalScale = scaleToCover * transform.zoom;
-
-    const drawW = vidW * finalScale;
-    const drawH = vidH * finalScale;
-
     try {
       ctx.drawImage(videoEl, -drawW / 2, -drawH / 2, drawW, drawH);
     } catch {
-      // Ignore seek frame errors
+      // Ignore frame read errors while seeking
     }
-    ctx.restore();
-
-    // Top Sacred Branding Overlay
-    const topGrad = ctx.createLinearGradient(0, 0, 0, 260);
-    topGrad.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
-    topGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0.45)');
-    topGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = topGrad;
-    ctx.fillRect(0, 0, targetW, 260);
-
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#f59e0b';
-    ctx.font = "bold 26px 'Outfit', sans-serif";
-    ctx.fillText('॥ શ્રી ડભોડીયા હનુમાનજી મંદિર - ડભોડા ॥', targetW / 2, 70);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = "bold 44px 'Noto Sans Gujarati', sans-serif";
-    ctx.shadowColor = 'rgba(0,0,0,0.7)';
-    ctx.shadowBlur = 6;
-    ctx.fillText('દૈનિક મંગળા દર્શન • આરતી', targetW / 2, 130);
-    ctx.restore();
-
-    // Bottom Vignette & Devotional Badge Overlay
-    const bottomGrad = ctx.createLinearGradient(0, targetH - 340, 0, targetH);
-    bottomGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    bottomGrad.addColorStop(0.3, 'rgba(0, 0, 0, 0.6)');
-    bottomGrad.addColorStop(1, 'rgba(0, 0, 0, 0.95)');
-    ctx.fillStyle = bottomGrad;
-    ctx.fillRect(0, targetH - 340, targetW, 340);
-
-    // Frosted Pill Container for Date & Aarti
-    const pillW = 680;
-    const pillH = 110;
-    const pillX = (targetW - pillW) / 2;
-    const pillY = targetH - 180;
-
-    ctx.save();
-    ctx.beginPath();
-    drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 30);
-    ctx.fillStyle = 'rgba(220, 38, 38, 0.9)'; // Sacred vermilion crimson
-    ctx.fill();
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = 4;
-    ctx.stroke();
-
-    // Text inside pill
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffffff';
-    ctx.font = "bold 44px 'Noto Sans Gujarati', sans-serif";
-    ctx.shadowColor = 'rgba(0,0,0,0.5)';
-    ctx.shadowBlur = 4;
-    ctx.fillText(`🪔 ${aartiName}`, targetW / 2, pillY + 50);
-
-    ctx.fillStyle = '#fef08a'; // Warm amber-yellow
-    ctx.font = "bold 26px 'Georgia', serif";
-    ctx.fillText(`તારીખ : ${displayDate}`, targetW / 2, pillY + 88);
     ctx.restore();
   }
+
+  // ─────────────────────────────────────────────────────────────
+  // 3. TOP GRADIENT OVERLAY (for text legibility)
+  // ─────────────────────────────────────────────────────────────
+  const topGrad = ctx.createLinearGradient(0, 0, 0, 160);
+  topGrad.addColorStop(0, 'rgba(0, 0, 0, 0.78)');
+  topGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0.38)');
+  topGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = topGrad;
+  ctx.fillRect(0, 0, W, 160);
+
+  // ─────────────────────────────────────────────────────────────
+  // 4. BOTTOM GRADIENT OVERLAY
+  // ─────────────────────────────────────────────────────────────
+  const bottomGrad = ctx.createLinearGradient(0, H - 200, 0, H);
+  bottomGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  bottomGrad.addColorStop(0.35, 'rgba(0, 0, 0, 0.55)');
+  bottomGrad.addColorStop(1, 'rgba(0, 0, 0, 0.88)');
+  ctx.fillStyle = bottomGrad;
+  ctx.fillRect(0, H - 200, W, 200);
+
+  // ─────────────────────────────────────────────────────────────
+  // 5. TOP-LEFT: Aarti Title (English / user-selected)
+  // ─────────────────────────────────────────────────────────────
+  ctx.save();
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+
+  // Aarti name in bold white
+  ctx.font = "bold 26px 'Georgia', serif";
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(0,0,0,0.7)';
+  ctx.shadowBlur = 8;
+  ctx.fillText(aartiName, 16, 20);
+
+  // Date on next line (or same line right side)
+  ctx.font = "bold 18px 'Georgia', serif";
+  ctx.fillStyle = '#fde68a';
+  ctx.shadowBlur = 6;
+  ctx.fillText(displayDate, 16, 52);
+  ctx.restore();
+
+  // ─────────────────────────────────────────────────────────────
+  // 6. BOTTOM SECTION: Handle + Date Pill + Aarti Name
+  // ─────────────────────────────────────────────────────────────
+
+  // 6a. Instagram Handle
+  ctx.save();
+  ctx.textBaseline = 'bottom';
+  ctx.textAlign = 'center';
+  ctx.font = "600 14px 'Outfit', 'Inter', sans-serif";
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 5;
+  ctx.fillText('@dabhodiyahanumanji_official', W / 2, H - 168);
+  ctx.restore();
+
+  // 6b. Date Pill (amber/golden background with calendar icon look)
+  const pillW = W - 32;
+  const pillH = 42;
+  const pillX = 16;
+  const pillY = H - 158;
+
+  ctx.save();
+  ctx.beginPath();
+  drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 10);
+  ctx.fillStyle = 'rgba(251, 191, 36, 0.92)'; // amber
+  ctx.shadowColor = 'rgba(0,0,0,0.4)';
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.restore();
+
+  // Calendar icon shape (simple square icon)
+  const iconX = pillX + 12;
+  const iconY = pillY + 8;
+  const iconSize = 26;
+  ctx.save();
+  ctx.fillStyle = '#92400e';
+  ctx.beginPath();
+  drawRoundedRect(ctx, iconX, iconY, iconSize, iconSize, 4);
+  ctx.fill();
+  // Calendar lines
+  ctx.strokeStyle = '#fde68a';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(iconX + 4, iconY + 9);
+  ctx.lineTo(iconX + iconSize - 4, iconY + 9);
+  ctx.stroke();
+  // dots
+  ctx.fillStyle = '#fde68a';
+  ctx.beginPath();
+  ctx.arc(iconX + 8, iconY + 16, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(iconX + 13, iconY + 16, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(iconX + 18, iconY + 16, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Date text in the pill
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.font = "bold 17px 'Georgia', serif";
+  ctx.fillStyle = '#1c1917';
+  ctx.shadowColor = 'transparent';
+  ctx.fillText(`તારીખ : ${displayDate}`, iconX + iconSize + 10, pillY + pillH / 2);
+  ctx.restore();
+
+  // 6c. Aarti Name Red Ribbon at very bottom
+  const ribbonY = H - 110;
+  const ribbonH = 48;
+
+  ctx.save();
+  ctx.beginPath();
+  drawRoundedRect(ctx, 0, ribbonY, W, ribbonH, 0);
+  // Crimson gradient ribbon
+  const ribbonGrad = ctx.createLinearGradient(0, ribbonY, W, ribbonY);
+  ribbonGrad.addColorStop(0, '#7f1d1d');
+  ribbonGrad.addColorStop(0.3, '#dc2626');
+  ribbonGrad.addColorStop(0.7, '#dc2626');
+  ribbonGrad.addColorStop(1, '#7f1d1d');
+  ctx.fillStyle = ribbonGrad;
+  ctx.fill();
+
+  // Gold border lines
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, ribbonY);
+  ctx.lineTo(W, ribbonY);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, ribbonY + ribbonH);
+  ctx.lineTo(W, ribbonY + ribbonH);
+  ctx.stroke();
+
+  // Aarti name text centered in ribbon
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = "bold 24px 'Noto Sans Gujarati', 'Shruti', sans-serif";
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 4;
+  ctx.fillText(`🪔 ${aartiName}`, W / 2, ribbonY + ribbonH / 2);
+  ctx.restore();
+
+  // ─────────────────────────────────────────────────────────────
+  // 7. THIN GOLD BORDER AROUND THE ENTIRE CANVAS
+  // ─────────────────────────────────────────────────────────────
+  ctx.save();
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1.5, 1.5, W - 3, H - 3);
+  ctx.restore();
 }
 
 /**
