@@ -5,26 +5,27 @@ import { ImageTransform } from './poster-generator';
 export type VideoLayoutMode = 'template' | 'story_9_16';
 
 export interface AartiVideoOptions {
-  aartiName: string;     // e.g. "મંગળાઆરતી", "સંધ્યા આરતી"
-  displayDate: string;   // DD/MM/YYYY
+  aartiName: string;        // e.g. "મંગળાઆરતી"
+  displayDate: string;      // DD/MM/YYYY
   transform: ImageTransform;
   layoutMode: VideoLayoutMode;
+  logoImg?: HTMLImageElement | null;   // Temple circular logo (cropped from template)
 }
 
-// Final output canvas dimensions for aarti video
+// Final output canvas dimensions for aarti video poster
 export const AARTI_CANVAS_W = 464;
 export const AARTI_CANVAS_H = 832;
+
+// Logo crop region from daily-darshan-template.png (1086 × 1448 source)
+// The circular logo sits at approx x:380, y:0, w:326, h:230
+export const LOGO_CROP = { sx: 380, sy: 0, sw: 326, sh: 230 };
 
 /**
  * Universal rounded rectangle path helper
  */
-function drawRoundedRect(
+function roundRect(
   ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
+  x: number, y: number, w: number, h: number, r: number
 ) {
   if (typeof ctx.roundRect === 'function') {
     ctx.roundRect(x, y, w, h, r);
@@ -42,237 +43,393 @@ function drawRoundedRect(
 }
 
 /**
- * Measure text width safely, with a fallback
+ * Draw the full-bleed video layer clipped to canvas
  */
-function measureText(ctx: CanvasRenderingContext2D, text: string): number {
+function drawVideoLayer(
+  ctx: CanvasRenderingContext2D,
+  videoEl: HTMLVideoElement,
+  transform: ImageTransform,
+  W: number,
+  H: number
+) {
+  const vidW = videoEl.videoWidth || W;
+  const vidH = videoEl.videoHeight || H;
+
+  const isRotated = transform.rotation % 180 !== 0;
+  const effectiveW = isRotated ? vidH : vidW;
+  const effectiveH = isRotated ? vidW : vidH;
+
+  const scaleToCover = Math.max(W / effectiveW, H / effectiveH);
+  const finalScale = scaleToCover * transform.zoom;
+
+  const drawW = vidW * finalScale;
+  const drawH = vidH * finalScale;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, W, H);
+  ctx.clip();
+  ctx.translate(W / 2 + transform.panX, H / 2 + transform.panY);
+  ctx.rotate((transform.rotation * Math.PI) / 180);
   try {
-    return ctx.measureText(text).width;
-  } catch {
-    return text.length * 16;
-  }
+    ctx.drawImage(videoEl, -drawW / 2, -drawH / 2, drawW, drawH);
+  } catch { /* ignore seek errors */ }
+  ctx.restore();
 }
 
 /**
- * Render a single frame of the Aarti video composite onto the canvas (464 × 832)
- * The video is full-bleed; overlays sit on top.
+ * Draw top + bottom gradient overlay darkening bands
  */
-export function renderAartiFrame(
+function drawGradientBands(ctx: CanvasRenderingContext2D, W: number, H: number) {
+  // Top band — heavier to accommodate temple title block
+  const topGrad = ctx.createLinearGradient(0, 0, 0, 260);
+  topGrad.addColorStop(0, 'rgba(0,0,0,0.88)');
+  topGrad.addColorStop(0.55, 'rgba(0,0,0,0.55)');
+  topGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = topGrad;
+  ctx.fillRect(0, 0, W, 260);
+
+  // Bottom band
+  const botGrad = ctx.createLinearGradient(0, H - 250, 0, H);
+  botGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  botGrad.addColorStop(0.3, 'rgba(0,0,0,0.6)');
+  botGrad.addColorStop(1, 'rgba(0,0,0,0.92)');
+  ctx.fillStyle = botGrad;
+  ctx.fillRect(0, H - 250, W, 250);
+}
+
+/**
+ * Draw top temple header: logo + temple name + aarti subtitle
+ */
+function drawTopHeader(
   ctx: CanvasRenderingContext2D,
-  videoEl: HTMLVideoElement,
-  _overlayImg: HTMLImageElement | null, // kept for API compatibility, unused
-  options: AartiVideoOptions
-): void {
-  const { aartiName, displayDate, transform } = options;
-  const W = AARTI_CANVAS_W;
-  const H = AARTI_CANVAS_H;
+  aartiName: string,
+  W: number,
+  logoImg: HTMLImageElement | null | undefined
+) {
+  const cx = W / 2;
 
-  // ─────────────────────────────────────────────────────────────
-  // 1. BLACK BACKGROUND (visible if video doesn't cover)
-  // ─────────────────────────────────────────────────────────────
-  ctx.fillStyle = '#0c0a08';
-  ctx.fillRect(0, 0, W, H);
+  // ── Circular Logo ──
+  const logoSize = 72;
+  const logoY = 10;
 
-  // ─────────────────────────────────────────────────────────────
-  // 2. FULL-BLEED VIDEO (cover-fill, centered)
-  // ─────────────────────────────────────────────────────────────
-  if (videoEl && videoEl.readyState >= 2) {
+  if (logoImg) {
     ctx.save();
-    // Clip to canvas bounds
+    // Clip to a circle for clean logo
     ctx.beginPath();
-    ctx.rect(0, 0, W, H);
+    ctx.arc(cx, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
     ctx.clip();
+    ctx.drawImage(
+      logoImg,
+      LOGO_CROP.sx, LOGO_CROP.sy, LOGO_CROP.sw, LOGO_CROP.sh,
+      cx - logoSize / 2, logoY, logoSize, logoSize
+    );
+    ctx.restore();
 
-    const vidW = videoEl.videoWidth || W;
-    const vidH = videoEl.videoHeight || H;
-
-    const isRotated = transform.rotation % 180 !== 0;
-    const effectiveW = isRotated ? vidH : vidW;
-    const effectiveH = isRotated ? vidW : vidH;
-
-    // Cover-scale: fill entire canvas
-    const scaleToCover = Math.max(W / effectiveW, H / effectiveH);
-    const finalScale = scaleToCover * transform.zoom;
-
-    const drawW = vidW * finalScale;
-    const drawH = vidH * finalScale;
-
-    ctx.translate(W / 2 + transform.panX, H / 2 + transform.panY);
-    ctx.rotate((transform.rotation * Math.PI) / 180);
-
-    try {
-      ctx.drawImage(videoEl, -drawW / 2, -drawH / 2, drawW, drawH);
-    } catch {
-      // Ignore frame read errors while seeking
-    }
+    // Gold circle border
+    ctx.save();
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(cx, logoY + logoSize / 2, logoSize / 2 + 1, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  } else {
+    // Fallback: draw a flame emoji in a circle
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(251,191,36,0.2)';
+    ctx.fill();
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.font = '36px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillText('🔱', cx, logoY + logoSize / 2);
     ctx.restore();
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // 3. TOP GRADIENT OVERLAY (for text legibility)
-  // ─────────────────────────────────────────────────────────────
-  const topGrad = ctx.createLinearGradient(0, 0, 0, 160);
-  topGrad.addColorStop(0, 'rgba(0, 0, 0, 0.78)');
-  topGrad.addColorStop(0.6, 'rgba(0, 0, 0, 0.38)');
-  topGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = topGrad;
-  ctx.fillRect(0, 0, W, 160);
+  const afterLogo = logoY + logoSize + 6;
 
-  // ─────────────────────────────────────────────────────────────
-  // 4. BOTTOM GRADIENT OVERLAY
-  // ─────────────────────────────────────────────────────────────
-  const bottomGrad = ctx.createLinearGradient(0, H - 200, 0, H);
-  bottomGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  bottomGrad.addColorStop(0.35, 'rgba(0, 0, 0, 0.55)');
-  bottomGrad.addColorStop(1, 'rgba(0, 0, 0, 0.88)');
-  ctx.fillStyle = bottomGrad;
-  ctx.fillRect(0, H - 200, W, 200);
-
-  // ─────────────────────────────────────────────────────────────
-  // 5. TOP-LEFT: Aarti Title (English / user-selected)
-  // ─────────────────────────────────────────────────────────────
+  // ── Top mantras: left & right ──
   ctx.save();
+  ctx.font = "bold 11px 'Noto Sans Gujarati', sans-serif";
+  ctx.fillStyle = '#fde68a';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 4;
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
+  ctx.fillText('॥ જય શ્રી રામ ॥', 8, 18);
+  ctx.textAlign = 'right';
+  ctx.fillText('॥ જય શ્રી હનુમાન ॥', W - 8, 18);
+  ctx.restore();
 
-  // Aarti name in bold white
-  ctx.font = "bold 26px 'Georgia', serif";
-  ctx.fillStyle = '#ffffff';
-  ctx.shadowColor = 'rgba(0,0,0,0.7)';
-  ctx.shadowBlur = 8;
-  ctx.fillText(aartiName, 16, 20);
-
-  // Date on next line (or same line right side)
-  ctx.font = "bold 18px 'Georgia', serif";
-  ctx.fillStyle = '#fde68a';
+  // ── Temple name: "શ્રી ડભોડીયા હનુમાનજી" ──
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.shadowColor = 'rgba(0,0,0,0.75)';
   ctx.shadowBlur = 6;
-  ctx.fillText(displayDate, 16, 52);
+  ctx.font = "bold 22px 'Noto Sans Gujarati', 'Shruti', sans-serif";
+  ctx.fillStyle = '#fbbf24';
+  ctx.fillText('શ્રી ડભોડીયા હનુમાનજી', cx, afterLogo);
   ctx.restore();
 
-  // ─────────────────────────────────────────────────────────────
-  // 6. BOTTOM SECTION: Handle + Date Pill + Aarti Name
-  // ─────────────────────────────────────────────────────────────
-
-  // 6a. Instagram Handle
+  // ── Subtitle: Aarti type centered ──
   ctx.save();
-  ctx.textBaseline = 'bottom';
   ctx.textAlign = 'center';
-  ctx.font = "600 14px 'Outfit', 'Inter', sans-serif";
-  ctx.fillStyle = 'rgba(255,255,255,0.85)';
-  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.textBaseline = 'top';
+  ctx.shadowColor = 'rgba(0,0,0,0.7)';
   ctx.shadowBlur = 5;
-  ctx.fillText('@dabhodiyahanumanji_official', W / 2, H - 168);
-  ctx.restore();
-
-  // 6b. Date Pill (amber/golden background with calendar icon look)
-  const pillW = W - 32;
-  const pillH = 42;
-  const pillX = 16;
-  const pillY = H - 158;
-
-  ctx.save();
-  ctx.beginPath();
-  drawRoundedRect(ctx, pillX, pillY, pillW, pillH, 10);
-  ctx.fillStyle = 'rgba(251, 191, 36, 0.92)'; // amber
-  ctx.shadowColor = 'rgba(0,0,0,0.4)';
-  ctx.shadowBlur = 8;
-  ctx.fill();
-  ctx.restore();
-
-  // Calendar icon shape (simple square icon)
-  const iconX = pillX + 12;
-  const iconY = pillY + 8;
-  const iconSize = 26;
-  ctx.save();
-  ctx.fillStyle = '#92400e';
-  ctx.beginPath();
-  drawRoundedRect(ctx, iconX, iconY, iconSize, iconSize, 4);
-  ctx.fill();
-  // Calendar lines
-  ctx.strokeStyle = '#fde68a';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(iconX + 4, iconY + 9);
-  ctx.lineTo(iconX + iconSize - 4, iconY + 9);
-  ctx.stroke();
-  // dots
-  ctx.fillStyle = '#fde68a';
-  ctx.beginPath();
-  ctx.arc(iconX + 8, iconY + 16, 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(iconX + 13, iconY + 16, 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(iconX + 18, iconY + 16, 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // Date text in the pill
-  ctx.save();
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  ctx.font = "bold 17px 'Georgia', serif";
-  ctx.fillStyle = '#1c1917';
-  ctx.shadowColor = 'transparent';
-  ctx.fillText(`તારીખ : ${displayDate}`, iconX + iconSize + 10, pillY + pillH / 2);
-  ctx.restore();
-
-  // 6c. Aarti Name Red Ribbon at very bottom
-  const ribbonY = H - 110;
-  const ribbonH = 48;
-
-  ctx.save();
-  ctx.beginPath();
-  drawRoundedRect(ctx, 0, ribbonY, W, ribbonH, 0);
-  // Crimson gradient ribbon
-  const ribbonGrad = ctx.createLinearGradient(0, ribbonY, W, ribbonY);
-  ribbonGrad.addColorStop(0, '#7f1d1d');
-  ribbonGrad.addColorStop(0.3, '#dc2626');
-  ribbonGrad.addColorStop(0.7, '#dc2626');
-  ribbonGrad.addColorStop(1, '#7f1d1d');
-  ctx.fillStyle = ribbonGrad;
-  ctx.fill();
-
-  // Gold border lines
-  ctx.strokeStyle = '#f59e0b';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(0, ribbonY);
-  ctx.lineTo(W, ribbonY);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(0, ribbonY + ribbonH);
-  ctx.lineTo(W, ribbonY + ribbonH);
-  ctx.stroke();
-
-  // Aarti name text centered in ribbon
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = "bold 24px 'Noto Sans Gujarati', 'Shruti', sans-serif";
+  ctx.font = "bold 16px 'Noto Sans Gujarati', 'Shruti', sans-serif";
   ctx.fillStyle = '#ffffff';
-  ctx.shadowColor = 'rgba(0,0,0,0.5)';
-  ctx.shadowBlur = 4;
-  ctx.fillText(`🪔 ${aartiName}`, W / 2, ribbonY + ribbonH / 2);
+  ctx.fillText('🪔 ' + aartiName, cx, afterLogo + 28);
   ctx.restore();
 
-  // ─────────────────────────────────────────────────────────────
-  // 7. THIN GOLD BORDER AROUND THE ENTIRE CANVAS
-  // ─────────────────────────────────────────────────────────────
+  // ── Thin gold divider line ──
+  const divY = afterLogo + 52;
   ctx.save();
-  ctx.strokeStyle = '#f59e0b';
-  ctx.lineWidth = 3;
-  ctx.strokeRect(1.5, 1.5, W - 3, H - 3);
+  const divGrad = ctx.createLinearGradient(20, 0, W - 20, 0);
+  divGrad.addColorStop(0, 'rgba(251,191,36,0)');
+  divGrad.addColorStop(0.3, 'rgba(251,191,36,0.8)');
+  divGrad.addColorStop(0.7, 'rgba(251,191,36,0.8)');
+  divGrad.addColorStop(1, 'rgba(251,191,36,0)');
+  ctx.strokeStyle = divGrad;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(20, divY);
+  ctx.lineTo(W - 20, divY);
+  ctx.stroke();
   ctx.restore();
 }
 
 /**
- * Determine the best supported video MIME type for MediaRecorder in the current browser
+ * Draw bottom info section: date pill + aarti ribbon + social handles
+ */
+function drawBottomInfo(
+  ctx: CanvasRenderingContext2D,
+  aartiName: string,
+  displayDate: string,
+  W: number,
+  H: number
+) {
+  const cx = W / 2;
+  const padX = 16;
+
+  // ── Social handle row (above date pill) ──
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.font = "500 12px 'Outfit', 'Inter', sans-serif";
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 4;
+  ctx.fillText('@dabhodiyahanumanji_official', cx, H - 190);
+  ctx.restore();
+
+  // ── Date Pill ──
+  const pillW = W - padX * 2;
+  const pillH = 40;
+  const pillX = padX;
+  const pillY = H - 174;
+
+  ctx.save();
+  ctx.beginPath();
+  roundRect(ctx, pillX, pillY, pillW, pillH, 10);
+  ctx.fillStyle = 'rgba(251,191,36,0.93)';
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.restore();
+
+  // Calendar icon (tiny box)
+  const icX = pillX + 12;
+  const icY = pillY + 8;
+  const icS = 24;
+  ctx.save();
+  ctx.fillStyle = '#92400e';
+  ctx.beginPath();
+  roundRect(ctx, icX, icY, icS, icS, 3);
+  ctx.fill();
+  // lines
+  ctx.strokeStyle = '#fde68a';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(icX + 3, icY + 8);
+  ctx.lineTo(icX + icS - 3, icY + 8);
+  ctx.stroke();
+  // dots
+  ctx.fillStyle = '#fde68a';
+  for (const [dx, dy] of [[6, 15], [12, 15], [18, 15]]) {
+    ctx.beginPath();
+    ctx.arc(icX + dx, icY + dy, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Date text in pill — centered in remaining space
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.font = "bold 16px 'Georgia', 'Times New Roman', serif";
+  ctx.fillStyle = '#1c1917';
+  ctx.shadowColor = 'transparent';
+  const textX = pillX + icS + 20 + (pillW - icS - 20) / 2;
+  ctx.fillText(`તારીખ : ${displayDate}`, textX, pillY + pillH / 2);
+  ctx.restore();
+
+  // ── Aarti Name — Red Ribbon ──
+  const ribY = H - 126;
+  const ribH = 46;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, ribY, W, ribH);
+  const ribGrad = ctx.createLinearGradient(0, 0, W, 0);
+  ribGrad.addColorStop(0, '#7f1d1d');
+  ribGrad.addColorStop(0.25, '#dc2626');
+  ribGrad.addColorStop(0.75, '#dc2626');
+  ribGrad.addColorStop(1, '#7f1d1d');
+  ctx.fillStyle = ribGrad;
+  ctx.fill();
+
+  // Gold top & bottom border lines
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 1.8;
+  [[0, ribY], [0, ribY + ribH]].forEach(([x, y]) => {
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  });
+
+  // Aarti text — CENTERED
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = "bold 21px 'Noto Sans Gujarati', 'Shruti', sans-serif";
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = 4;
+  ctx.fillText(`🪔  ${aartiName}`, cx, ribY + ribH / 2);
+  ctx.restore();
+
+  // ── Social icons row at the very bottom ──
+  const iconsY = H - 72;
+  const iconRowH = 62;
+
+  // Background strip
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(0, iconsY, W, iconRowH);
+  ctx.restore();
+
+  // Divider between left (handles) and right (WhatsApp)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(251,191,36,0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(W / 2, iconsY + 8);
+  ctx.lineTo(W / 2, iconsY + iconRowH - 8);
+  ctx.stroke();
+  ctx.restore();
+
+  // Left: social handles
+  const handles = [
+    { icon: '📷', text: '@DABHODIYAHANUMANJI_OFFICIAL' },
+    { icon: '▶', text: '@DABHODIYAHANUMANJI_OFFICIAL' },
+  ];
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 3;
+  handles.forEach((h, i) => {
+    const y = iconsY + 16 + i * 20;
+    ctx.font = "bold 9px 'Outfit', sans-serif";
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillText(h.icon, 8, y);
+    ctx.font = "500 8.5px 'Outfit', sans-serif";
+    ctx.fillStyle = '#e5e7eb';
+    ctx.fillText(h.text, 22, y);
+  });
+  ctx.restore();
+
+  // Right: WhatsApp number
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 3;
+
+  ctx.font = "bold 9px 'Outfit', sans-serif";
+  ctx.fillStyle = '#4ade80';
+  ctx.fillText('📱 WhatsApp', W * 0.75, iconsY + 16);
+
+  ctx.font = "bold 11px 'Georgia', serif";
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('MO : 9091801818', W * 0.75, iconsY + 35);
+  ctx.restore();
+}
+
+/**
+ * Draw the outer gold border frame
+ */
+function drawBorder(ctx: CanvasRenderingContext2D, W: number, H: number) {
+  ctx.save();
+  // Outer amber border
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth = 3.5;
+  ctx.strokeRect(1.75, 1.75, W - 3.5, H - 3.5);
+  // Inner thin border
+  ctx.strokeStyle = 'rgba(251,191,36,0.4)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(6, 6, W - 12, H - 12);
+  ctx.restore();
+}
+
+/**
+ * Main render function — draws one frame of the 464×832 aarti video poster.
+ * videoEl may be null when rendering the idle/placeholder state.
+ */
+export function renderAartiFrame(
+  ctx: CanvasRenderingContext2D,
+  videoEl: HTMLVideoElement | null,
+  _overlayImg: HTMLImageElement | null, // kept for API compat, unused
+  options: AartiVideoOptions
+): void {
+  const { aartiName, displayDate, transform, logoImg } = options;
+  const W = AARTI_CANVAS_W;
+  const H = AARTI_CANVAS_H;
+
+  // 1. Background (drawn by caller when idle; here only if needed)
+  // Full-bleed video
+  if (videoEl && videoEl.readyState >= 2) {
+    drawVideoLayer(ctx, videoEl, transform, W, H);
+  }
+
+  // 3. Gradient bands
+  drawGradientBands(ctx, W, H);
+
+  // 4. Top header (logo + temple name + aarti)
+  drawTopHeader(ctx, aartiName, W, logoImg);
+
+  // 5. Bottom info (date pill + ribbon + social)
+  drawBottomInfo(ctx, aartiName, displayDate, W, H);
+
+  // 6. Gold border frame
+  drawBorder(ctx, W, H);
+}
+
+/**
+ * Determine the best supported video MIME type for MediaRecorder
  */
 export function getSupportedVideoMimeType(): { mimeType: string; extension: string } {
   if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined') {
     return { mimeType: 'video/webm', extension: 'webm' };
   }
-
   const candidates = [
     { type: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', ext: 'mp4' },
     { type: 'video/mp4;codecs=avc1', ext: 'mp4' },
@@ -282,13 +439,9 @@ export function getSupportedVideoMimeType(): { mimeType: string; extension: stri
     { type: 'video/webm;codecs=vp8,opus', ext: 'webm' },
     { type: 'video/webm', ext: 'webm' },
   ];
-
-  for (const candidate of candidates) {
-    if (MediaRecorder.isTypeSupported(candidate.type)) {
-      return { mimeType: candidate.type, extension: candidate.ext };
-    }
+  for (const c of candidates) {
+    if (MediaRecorder.isTypeSupported(c.type)) return { mimeType: c.type, extension: c.ext };
   }
-
   return { mimeType: '', extension: 'webm' };
 }
 
@@ -312,125 +465,77 @@ export function recordAartiVideo(
       const totalDuration = Math.max(1, endTimeSec - startTimeSec);
       const { mimeType, extension } = getSupportedVideoMimeType();
 
-      // Setup Canvas Capture Stream (30 FPS)
       const captureStream = (canvas as any).captureStream
         ? (canvas as any).captureStream(30)
         : (canvas as any).mozCaptureStream
         ? (canvas as any).mozCaptureStream(30)
         : null;
 
-      if (!captureStream) {
-        throw new Error('Canvas video stream capture is not supported in this browser.');
-      }
+      if (!captureStream) throw new Error('Canvas video stream capture not supported.');
 
-      // Mix Video Audio into Stream via Web Audio API if available
       let audioTracks: MediaStreamTrack[] = [];
-      let audioCtx: AudioContext | null = null;
       try {
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioContextClass) {
-          audioCtx = new AudioContextClass();
+        const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtxClass) {
+          const audioCtx = new AudioCtxClass();
           const source = audioCtx.createMediaElementSource(videoEl);
           const dest = audioCtx.createMediaStreamDestination();
           source.connect(dest);
           source.connect(audioCtx.destination);
           audioTracks = dest.stream.getAudioTracks();
         }
-      } catch (audioErr) {
-        console.warn('Audio capture warning (video may be silent or already attached):', audioErr);
-      }
+      } catch (e) { console.warn('Audio capture:', e); }
 
-      // Combine video track + audio tracks
-      const streamTracks = [...captureStream.getVideoTracks(), ...audioTracks];
-      const combinedStream = new MediaStream(streamTracks);
+      const combinedStream = new MediaStream([...captureStream.getVideoTracks(), ...audioTracks]);
+      const recOpts: MediaRecorderOptions = { videoBitsPerSecond: 4_500_000 };
+      if (mimeType) recOpts.mimeType = mimeType;
 
-      const recorderOptions: MediaRecorderOptions = {
-        videoBitsPerSecond: 4_500_000, // Crisp 4.5 Mbps bitrate
-      };
-      if (mimeType) {
-        recorderOptions.mimeType = mimeType;
-      }
-
-      const recorder = new MediaRecorder(combinedStream, recorderOptions);
+      const recorder = new MediaRecorder(combinedStream, recOpts);
       const chunks: Blob[] = [];
 
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-
+      recorder.ondataavailable = (e) => { if (e.data?.size > 0) chunks.push(e.data); };
       recorder.onstop = () => {
-        const finalBlob = new Blob(chunks, { type: mimeType || 'video/mp4' });
+        const blob = new Blob(chunks, { type: mimeType || 'video/mp4' });
         const cleanDate = options.displayDate.replace(/\//g, '-');
-        const filename = `Dabhodiya-Hanumanji-${options.aartiName.replace(/\s+/g, '')}-${cleanDate}.${extension}`;
-        resolve({ blob: finalBlob, filename });
+        const filename = `Dabhodiya-${options.aartiName.replace(/\s+/g, '')}-${cleanDate}.${extension}`;
+        resolve({ blob, filename });
       };
+      recorder.onerror = reject;
 
-      recorder.onerror = (err) => {
-        reject(err);
-      };
-
-      // Reset video to start time and begin recording
       videoEl.currentTime = startTimeSec;
       await new Promise<void>((r) => {
-        const onSeeked = () => {
-          videoEl.removeEventListener('seeked', onSeeked);
-          r();
-        };
-        videoEl.addEventListener('seeked', onSeeked);
-        // Fallback timeout in case seeked doesn't fire
-        setTimeout(onSeeked, 600);
+        const fn = () => { videoEl.removeEventListener('seeked', fn); r(); };
+        videoEl.addEventListener('seeked', fn);
+        setTimeout(fn, 600);
       });
 
-      // Render initial frame
       renderAartiFrame(ctx, videoEl, overlayImg, options);
+      recorder.start(100);
 
-      // Start recorder
-      recorder.start(100); // 100ms slice chunks
-
-      // Unmute during export so audio flows to audioCtx
       const prevMuted = videoEl.muted;
       videoEl.muted = false;
+      let active = true;
 
-      let isRecording = true;
-
-      const stopRecording = () => {
-        if (!isRecording) return;
-        isRecording = false;
+      const stop = () => {
+        if (!active) return;
+        active = false;
         videoEl.pause();
         videoEl.muted = prevMuted;
-        if (recorder.state === 'recording') {
-          recorder.stop();
-        }
+        if (recorder.state === 'recording') recorder.stop();
       };
 
-      // Play video
       await videoEl.play();
 
-      // Render loop during playback
-      const renderTick = () => {
-        if (!isRecording) return;
-
+      const tick = () => {
+        if (!active) return;
         renderAartiFrame(ctx, videoEl, overlayImg, options);
-
-        const currentSec = videoEl.currentTime - startTimeSec;
-        const progress = Math.min(100, Math.max(0, Math.round((currentSec / totalDuration) * 100)));
-        if (onProgress) {
-          onProgress(progress, Math.min(currentSec, totalDuration), totalDuration);
-        }
-
-        if (videoEl.currentTime >= endTimeSec || videoEl.ended) {
-          stopRecording();
-          return;
-        }
-
-        requestAnimationFrame(renderTick);
+        const cur = videoEl.currentTime - startTimeSec;
+        const pct = Math.min(100, Math.max(0, Math.round((cur / totalDuration) * 100)));
+        onProgress?.(pct, Math.min(cur, totalDuration), totalDuration);
+        if (videoEl.currentTime >= endTimeSec || videoEl.ended) { stop(); return; }
+        requestAnimationFrame(tick);
       };
-
-      requestAnimationFrame(renderTick);
-    } catch (err) {
-      reject(err);
-    }
+      requestAnimationFrame(tick);
+    } catch (err) { reject(err); }
   });
 }
