@@ -46,9 +46,15 @@ function drawRoundedRect(
   }
 }
 
-/**
- * Draw a single frame of the Aarti video composite onto the canvas
- */
+// Exact 464 x 832 frame specified for daily aarti videos
+export const AARTI_VIDEO_FRAME = {
+  left: 311,
+  top: 427,
+  width: 464,
+  height: 832,
+  cornerRadius: 14,
+};
+
 export function renderAartiFrame(
   ctx: CanvasRenderingContext2D,
   videoEl: HTMLVideoElement,
@@ -59,15 +65,15 @@ export function renderAartiFrame(
 
   if (layoutMode === 'template') {
     // ----------------------------------------------------
-    // 1. CLASSIC TEMPLE FRAME (1086 × 1448)
+    // 1. CLASSIC TEMPLE FRAME (464 × 832 VIDEO WINDOW)
     // ----------------------------------------------------
     ctx.fillStyle = '#fef5e3';
     ctx.fillRect(0, 0, POSTER_WIDTH, POSTER_HEIGHT);
 
-    // Draw Video Frame clipped to the temple's golden photo window
+    // Draw Video Frame clipped to the exact 464 × 832 window
     ctx.save();
     ctx.beginPath();
-    const { left, top, width, height, cornerRadius } = PHOTO_FRAME;
+    const { left, top, width, height, cornerRadius } = AARTI_VIDEO_FRAME;
     drawRoundedRect(ctx, left, top, width, height, cornerRadius);
     ctx.clip();
 
@@ -80,8 +86,8 @@ export function renderAartiFrame(
     ctx.translate(frameCenterX + transform.panX, frameCenterY + transform.panY);
     ctx.rotate((transform.rotation * Math.PI) / 180);
 
-    const vidW = videoEl.videoWidth || 1080;
-    const vidH = videoEl.videoHeight || 1920;
+    const vidW = videoEl.videoWidth || 464;
+    const vidH = videoEl.videoHeight || 832;
 
     const isRotated = transform.rotation % 180 !== 0;
     const effectiveW = isRotated ? vidH : vidW;

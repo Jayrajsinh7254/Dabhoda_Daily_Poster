@@ -117,15 +117,15 @@ export default function AartiVideoGenerator() {
     }
   }, []);
 
-  // 2. Preload template overlay
+  // 2. Preload template aarti overlay (with 464 x 832 video window)
   useEffect(() => {
-    loadImage("/assets/template-overlay.png")
+    loadImage("/assets/template-aarti-overlay.png")
       .then((img) => {
         cachedOverlayRef.current = img;
         drawCurrentFrame();
       })
       .catch((err) => {
-        console.error("Failed to preload template overlay:", err);
+        console.error("Failed to preload template aarti overlay:", err);
       });
   }, []);
 
@@ -223,16 +223,21 @@ export default function AartiVideoGenerator() {
 
   // Idle state illustration when waiting for video
   const renderIdleState = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
-    ctx.fillStyle = "#1c1917";
+    ctx.fillStyle = "#fef5e3";
     ctx.fillRect(0, 0, w, h);
 
     if (layoutMode === "template" && cachedOverlayRef.current) {
+      // 464 x 832 video window placeholder
+      ctx.fillStyle = "#181512";
+      ctx.fillRect(311, 427, 464, 832);
+
       ctx.drawImage(cachedOverlayRef.current, 0, 0, w, h);
 
       // Render date
       ctx.fillStyle = "#16161b";
       ctx.font = "bold 32px 'Georgia', serif";
       ctx.textBaseline = "alphabetic";
+      ctx.textAlign = "left";
       ctx.fillText(dateInfo.displayDate, 542, 1196);
 
       // Render aarti
@@ -701,7 +706,7 @@ export default function AartiVideoGenerator() {
                   }`}
                 >
                   <span className="font-semibold text-xs text-stone-200">શાસ્ત્રીય મંદિર ફ્રેમ</span>
-                  <span className="text-[10px] text-stone-400">1086 × 1448 (પોસ્ટર જેવી ફ્રેમ)</span>
+                  <span className="text-[10px] text-amber-300 font-mono font-semibold">ફ્રેમ: 464 × 832 px (દૈનિક વિડીયો)</span>
                 </button>
                 <button
                   type="button"
@@ -848,8 +853,8 @@ export default function AartiVideoGenerator() {
                 </h2>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-mono text-stone-400 bg-stone-950 px-2 py-0.5 rounded border border-stone-800">
-                  {layoutMode === "template" ? "1086 × 1448" : "1080 × 1920"}
+                <span className="text-[11px] font-mono text-amber-300 bg-stone-950 px-2 py-0.5 rounded border border-amber-800/40">
+                  {layoutMode === "template" ? "ફ્રેમ: 464 × 832 (પોસ્ટર 1086 × 1448)" : "1080 × 1920"}
                 </span>
                 <button
                   type="button"
