@@ -23,6 +23,11 @@ import {
   Loader2,
   Download,
   Layout,
+  Move,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
 } from "lucide-react";
 import {
   DEFAULT_TRANSFORM,
@@ -51,6 +56,7 @@ const AARTI_PRESETS = [
 export default function AartiVideoGenerator() {
   // Layout mode: 'template' (Photo layout 1086×1448) or 'story_9_16' (464×832)
   const [layoutMode, setLayoutMode] = useState<VideoLayoutMode>("template");
+  const [isPanMode, setIsPanMode] = useState<boolean>(false);
 
   // Date state (live in Asia/Kolkata)
   const [dateInfo, setDateInfo] = useState(() => ({
@@ -277,13 +283,23 @@ export default function AartiVideoGenerator() {
   const handleRotate = () => setTransform((p) => ({ ...p, rotation: ((p.rotation + 90) % 360) as 0 | 90 | 180 | 270 }));
   const handleResetTransform = () => setTransform(DEFAULT_TRANSFORM);
 
-  const handlePointerDown = (x: number, y: number) => {
+  const updatePan = (dx: number, dy: number) => {
+    setTransform((prev) => ({
+      ...prev,
+      panX: prev.panX + dx,
+      panY: prev.panY + dy,
+    }));
+  };
+
+  const handlePointerDown = (x: number, y: number, isTouch = false) => {
+    if (isTouch && !isPanMode) return;
     isDraggingRef.current = true;
     dragStartRef.current = { x, y };
   };
 
-  const handlePointerMove = (x: number, y: number) => {
+  const handlePointerMove = (x: number, y: number, isTouch = false) => {
     if (!isDraggingRef.current) return;
+    if (isTouch && !isPanMode) return;
     const dx = x - dragStartRef.current.x;
     const dy = y - dragStartRef.current.y;
     dragStartRef.current = { x, y };
@@ -294,6 +310,19 @@ export default function AartiVideoGenerator() {
   const handlePointerUp = () => {
     isDraggingRef.current = false;
   };
+
+  // Window-level release to ensure dragging stops on scroll/leave
+  useEffect(() => {
+    const handleGlobalUp = () => {
+      isDraggingRef.current = false;
+    };
+    window.addEventListener("pointerup", handleGlobalUp);
+    window.addEventListener("touchend", handleGlobalUp);
+    return () => {
+      window.removeEventListener("pointerup", handleGlobalUp);
+      window.removeEventListener("touchend", handleGlobalUp);
+    };
+  }, []);
 
   // 7. Export
   const handleExportVideo = async () => {
@@ -650,39 +679,98 @@ export default function AartiVideoGenerator() {
                 {Math.round(transform.zoom * 100)}%
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleRotate}
-                className="py-1.5 px-3 bg-stone-800 hover:bg-stone-750 border border-stone-700 rounded-lg text-xs font-medium text-stone-200 flex items-center gap-1.5"
-              >
-                <RotateCw className="w-3.5 h-3.5 text-amber-400" /> ૯૦° ફેરવો
-              </button>
-              <p className="text-[11px] text-stone-400">પોસ્ટર પર ડ્રૅગ કરીને વિડીયો ખસેડો</p>
+            {/* Position Arrow & Rotate Buttons */}
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stone-800">
+              <div>
+                <span className="text-xs text-stone-300 block mb-1.5">રોટેશન</span>
+                <button
+                  type="button"
+                  onClick={handleRotate}
+                  className="w-full py-2 px-3 bg-stone-800 hover:bg-stone-750 border border-stone-700 rounded-lg text-xs font-medium text-stone-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCw className="w-3.5 h-3.5 text-amber-400" /> ૯૦° ફેરવો
+                </button>
+              </div>
+
+              <div>
+                <span className="text-xs text-stone-300 block mb-1.5">પોઝિશન (ખસેડો)</span>
+                <div className="grid grid-cols-4 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => updatePan(0, -20)}
+                    className="p-1.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 flex items-center justify-center border border-stone-700 cursor-pointer"
+                    title="Move Up"
+                  >
+                    <ArrowUp className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updatePan(0, 20)}
+                    className="p-1.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 flex items-center justify-center border border-stone-700 cursor-pointer"
+                    title="Move Down"
+                  >
+                    <ArrowDown className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updatePan(-20, 0)}
+                    className="p-1.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 flex items-center justify-center border border-stone-700 cursor-pointer"
+                    title="Move Left"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updatePan(20, 0)}
+                    className="p-1.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 flex items-center justify-center border border-stone-700 cursor-pointer"
+                    title="Move Right"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
         {/* ═══ RIGHT: Preview + Export ═══ */}
-        <div className="lg:col-span-7 flex flex-col gap-5 items-center">
+        <div className="lg:col-span-7 flex flex-col gap-5 items-center w-full lg:sticky lg:top-4 self-start">
           {/* Live Preview card */}
           <div className="w-full bg-stone-900/90 border border-stone-800 rounded-2xl p-4 shadow-xl backdrop-blur-md">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-amber-400 font-semibold text-sm flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-amber-500" />
-                Live Preview ({isTemplate ? "1086 × 1448" : "464 × 832"})
-              </h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <h2 className="text-amber-400 font-semibold text-sm">
+                  Live Preview
+                </h2>
                 <span className="text-[11px] font-mono text-amber-300 bg-stone-950 px-2 py-0.5 rounded border border-amber-800/40">
                   {isTemplate ? "૧૦૮૬×૧૪૪૮" : "૪૬૪×૮૩૨"}
                 </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Pan Mode Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setIsPanMode(!isPanMode)}
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition flex items-center gap-1.5 cursor-pointer ${
+                    isPanMode
+                      ? "bg-amber-500 text-stone-950 border-amber-400 font-bold shadow-md"
+                      : "bg-stone-800 text-stone-300 hover:text-amber-300 border-stone-700"
+                  }`}
+                  title={isPanMode ? "પૅન મોડ બંધ કરો (સ્ક્રોલ મુક્ત)" : "વિડીયો ડ્રૅગ કરવા માટે ચાલુ કરો"}
+                >
+                  <Move className="w-3.5 h-3.5" />
+                  <span>{isPanMode ? "✋ પૅન સક્રિય" : "✋ પોઝિશન"}</span>
+                </button>
+
                 {videoSrc && (
                   <>
                     <button
                       type="button"
                       onClick={toggleMute}
                       title={isMuted ? "અનમ્યૂટ કરો" : "મ્યૂટ કરો"}
-                      className="p-1.5 bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-lg text-stone-300"
+                      className="p-1.5 bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-lg text-stone-300 cursor-pointer"
                     >
                       {isMuted ? (
                         <VolumeX className="w-3.5 h-3.5" />
@@ -694,7 +782,7 @@ export default function AartiVideoGenerator() {
                       type="button"
                       onClick={togglePlay}
                       title={isPlaying ? "રોકો" : "ચલાવો"}
-                      className="p-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-600/40 rounded-lg text-amber-300"
+                      className="p-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-600/40 rounded-lg text-amber-300 cursor-pointer"
                     >
                       {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                     </button>
@@ -703,21 +791,33 @@ export default function AartiVideoGenerator() {
               </div>
             </div>
 
-            <div className="flex justify-center py-1">
+            <div className="flex justify-center py-1 w-full">
               <div
-                className="relative cursor-crosshair rounded-xl overflow-hidden shadow-2xl ring-2 ring-amber-500/40 bg-stone-950"
-                style={{ width: PREVIEW_W, height: PREVIEW_H }}
-                onMouseDown={(e) => handlePointerDown(e.clientX, e.clientY)}
-                onMouseMove={(e) => handlePointerMove(e.clientX, e.clientY)}
+                className={`relative w-full ${
+                  isTemplate
+                    ? "max-w-[340px] sm:max-w-[400px] lg:max-w-[430px] aspect-[1086/1448]"
+                    : "max-w-[270px] sm:max-w-[300px] lg:max-w-[320px] aspect-[464/832]"
+                } mx-auto rounded-xl overflow-hidden shadow-2xl ring-2 ${
+                  isPanMode
+                    ? "ring-amber-500 touch-none cursor-grab active:cursor-grabbing"
+                    : "ring-amber-500/30 touch-pan-y"
+                } bg-stone-950 flex items-center justify-center select-none`}
+                onMouseDown={(e) => {
+                  if (e.button === 0) handlePointerDown(e.clientX, e.clientY, false);
+                }}
+                onMouseMove={(e) => {
+                  if (e.buttons === 1) handlePointerMove(e.clientX, e.clientY, false);
+                }}
                 onMouseUp={handlePointerUp}
-                onMouseLeave={handlePointerUp}
                 onTouchStart={(e) => {
-                  const t = e.touches[0];
-                  handlePointerDown(t.clientX, t.clientY);
+                  if (isPanMode && e.touches[0]) {
+                    handlePointerDown(e.touches[0].clientX, e.touches[0].clientY, true);
+                  }
                 }}
                 onTouchMove={(e) => {
-                  const t = e.touches[0];
-                  handlePointerMove(t.clientX, t.clientY);
+                  if (isPanMode && e.touches[0]) {
+                    handlePointerMove(e.touches[0].clientX, e.touches[0].clientY, true);
+                  }
                 }}
                 onTouchEnd={handlePointerUp}
               >
@@ -725,8 +825,13 @@ export default function AartiVideoGenerator() {
                   ref={canvasRef}
                   width={isTemplate ? TEMPLATE_CANVAS_W : STORY_CANVAS_W}
                   height={isTemplate ? TEMPLATE_CANVAS_H : STORY_CANVAS_H}
-                  style={{ width: PREVIEW_W, height: PREVIEW_H, display: "block" }}
+                  className="w-full h-full object-contain pointer-events-none"
                 />
+                {isPanMode && (
+                  <div className="absolute top-2 left-2 bg-amber-500 text-stone-950 font-bold text-[10px] px-2 py-0.5 rounded-full shadow pointer-events-none">
+                    ✋ પૅન સક્રિય — વિડીયો ખસેડો
+                  </div>
+                )}
                 {!videoSrc && (
                   <div className="absolute bottom-4 left-0 right-0 flex justify-center pointer-events-none">
                     <span className="bg-stone-900/90 text-amber-400 border border-amber-500/30 text-xs px-3 py-1 rounded-full shadow-lg backdrop-blur-sm">

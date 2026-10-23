@@ -62,6 +62,7 @@ export default function PosterGenerator({ hideHeader = false }: { hideHeader?: b
 
   // Drag to pan state
   const [isDragging, setIsDragging] = useState(false);
+  const [isPanMode, setIsPanMode] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number; startPanX: number; startPanY: number }>({
     x: 0,
     y: 0,
@@ -197,7 +198,8 @@ export default function PosterGenerator({ hideHeader = false }: { hideHeader?: b
   };
 
   // Touch and mouse dragging to pan the photo directly on the canvas
-  const handlePointerDown = (clientX: number, clientY: number) => {
+  const handlePointerDown = (clientX: number, clientY: number, isTouch = false) => {
+    if (isTouch && !isPanMode) return;
     setIsDragging(true);
     dragStartRef.current = {
       x: clientX,
@@ -207,8 +209,9 @@ export default function PosterGenerator({ hideHeader = false }: { hideHeader?: b
     };
   };
 
-  const handlePointerMove = (clientX: number, clientY: number) => {
+  const handlePointerMove = (clientX: number, clientY: number, isTouch = false) => {
     if (!isDragging) return;
+    if (isTouch && !isPanMode) return;
     const dx = clientX - dragStartRef.current.x;
     const dy = clientY - dragStartRef.current.y;
     const scale = 2.5; // Scale screen preview coordinates to canvas resolution
@@ -222,6 +225,17 @@ export default function PosterGenerator({ hideHeader = false }: { hideHeader?: b
   const handlePointerUp = () => {
     setIsDragging(false);
   };
+
+  // Window-level release to ensure drag never sticks during scrolling
+  useEffect(() => {
+    const handleGlobalUp = () => setIsDragging(false);
+    window.addEventListener("pointerup", handleGlobalUp);
+    window.addEventListener("touchend", handleGlobalUp);
+    return () => {
+      window.removeEventListener("pointerup", handleGlobalUp);
+      window.removeEventListener("touchend", handleGlobalUp);
+    };
+  }, []);
 
   // Download Action
   const handleDownload = () => {
@@ -528,29 +542,46 @@ export default function PosterGenerator({ hideHeader = false }: { hideHeader?: b
         </div>
 
         {/* Preview & Download Column (7 cols) */}
-        <div className="lg:col-span-7 space-y-4">
+        <div className="lg:col-span-7 space-y-4 lg:sticky lg:top-4 self-start">
           <div className="bg-stone-900/90 border border-amber-500/20 rounded-2xl p-4 sm:p-5 shadow-2xl backdrop-blur-sm">
             {/* Header above preview */}
-            <div className="flex items-center justify-between mb-3 pb-3 border-b border-stone-800">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-3 border-b border-stone-800">
               <div className="flex items-center gap-2">
                 <Eye className="w-4 h-4 text-amber-400" />
                 <span className="text-sm font-semibold text-stone-200">
-                  લાઇવ પ્રિવ્યુ (Poster Preview)
+                  લાઇવ પ્રિવ્યુ
                 </span>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-stone-800 text-stone-400 border border-stone-700 font-mono">
                   1086 × 1448 px
                 </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsFullscreenPreview(true)}
-                className="text-xs text-stone-300 hover:text-amber-400 transition flex items-center gap-1.5 px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 border border-stone-700 cursor-pointer"
-                title="Fullscreen Preview"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">મોટો પ્રિવ્યુ</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Pan Mode Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsPanMode(!isPanMode)}
+                  className={`text-xs px-2.5 py-1 rounded-lg border transition flex items-center gap-1.5 cursor-pointer ${
+                    isPanMode
+                      ? "bg-amber-500 text-stone-950 border-amber-400 font-bold shadow-md"
+                      : "bg-stone-800 text-stone-300 hover:text-amber-300 border-stone-700"
+                  }`}
+                  title={isPanMode ? "પૅન મોડ બંધ કરો (સ્ક્રોલ મુક્ત)" : "ફોટો ડ્રૅગ કરવા માટે ચાલુ કરો"}
+                >
+                  <Move className="w-3.5 h-3.5" />
+                  <span>{isPanMode ? "✋ પૅન સક્રિય" : "✋ ફોટો ખસેડો"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsFullscreenPreview(true)}
+                  className="text-xs text-stone-300 hover:text-amber-400 transition flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 border border-stone-700 cursor-pointer"
+                  title="Fullscreen Preview"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">મોટો પ્રિવ્યુ</span>
+                </button>
+              </div>
             </div>
 
             {/* Error Message if any */}
@@ -560,18 +591,29 @@ export default function PosterGenerator({ hideHeader = false }: { hideHeader?: b
               </div>
             )}
 
-            {/* Canvas Container with realistic aspect ratio */}
+            {/* Canvas Container with responsive constraints */}
             <div
-              className="relative w-full aspect-[1086/1448] bg-stone-950 rounded-xl overflow-hidden shadow-inner border border-stone-800 flex items-center justify-center select-none cursor-grab active:cursor-grabbing"
-              onMouseDown={(e) => handlePointerDown(e.clientX, e.clientY)}
-              onMouseMove={(e) => handlePointerMove(e.clientX, e.clientY)}
+              className={`relative w-full max-w-[360px] sm:max-w-[420px] lg:max-w-[440px] mx-auto aspect-[1086/1448] bg-stone-950 rounded-xl overflow-hidden shadow-2xl ring-1 ${
+                isPanMode
+                  ? "ring-2 ring-amber-500 touch-none cursor-grab active:cursor-grabbing"
+                  : "ring-amber-500/20 touch-pan-y"
+              } flex items-center justify-center select-none`}
+              onMouseDown={(e) => {
+                if (e.button === 0) handlePointerDown(e.clientX, e.clientY, false);
+              }}
+              onMouseMove={(e) => {
+                if (e.buttons === 1) handlePointerMove(e.clientX, e.clientY, false);
+              }}
               onMouseUp={handlePointerUp}
-              onMouseLeave={handlePointerUp}
               onTouchStart={(e) => {
-                if (e.touches[0]) handlePointerDown(e.touches[0].clientX, e.touches[0].clientY);
+                if (isPanMode && e.touches[0]) {
+                  handlePointerDown(e.touches[0].clientX, e.touches[0].clientY, true);
+                }
               }}
               onTouchMove={(e) => {
-                if (e.touches[0]) handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+                if (isPanMode && e.touches[0]) {
+                  handlePointerMove(e.touches[0].clientX, e.touches[0].clientY, true);
+                }
               }}
               onTouchEnd={handlePointerUp}
             >
@@ -582,6 +624,12 @@ export default function PosterGenerator({ hideHeader = false }: { hideHeader?: b
                 width={POSTER_WIDTH}
                 height={POSTER_HEIGHT}
               />
+
+              {isPanMode && (
+                <div className="absolute top-2 left-2 bg-amber-500 text-stone-950 font-bold text-[10px] px-2 py-0.5 rounded-full shadow pointer-events-none">
+                  ✋ પૅન સક્રિય — ફોટો ખસેડો
+                </div>
+              )}
 
               {/* Initial Loading Indicator Only */}
               {isRendering && !cachedPhotoRef.current && (

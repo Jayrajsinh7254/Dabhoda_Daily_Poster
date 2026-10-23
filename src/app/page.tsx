@@ -35,11 +35,11 @@ export default function Home() {
           </p>
 
           {/* Devotional Mode Navigation Tabs */}
-          <div className="mt-5 inline-flex p-1.5 bg-stone-900/90 border border-stone-800 rounded-2xl shadow-xl backdrop-blur-md gap-1">
+          <div className="mt-5 flex flex-col sm:flex-row w-full sm:w-auto max-w-md mx-auto p-1.5 bg-stone-900/90 border border-stone-800 rounded-2xl shadow-xl backdrop-blur-md gap-1">
             <button
               type="button"
               onClick={() => setActiveTab("poster")}
-              className={`flex items-center gap-2 py-2.5 px-4 sm:px-6 rounded-xl font-semibold text-xs sm:text-sm transition-all cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 sm:px-6 rounded-xl font-semibold text-xs sm:text-sm transition-all cursor-pointer ${
                 activeTab === "poster"
                   ? "bg-gradient-to-r from-amber-500 to-orange-500 text-stone-950 shadow-lg font-bold"
                   : "text-stone-400 hover:text-stone-200 hover:bg-stone-800/60"
@@ -52,14 +52,14 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setActiveTab("video")}
-              className={`flex items-center gap-2 py-2.5 px-4 sm:px-6 rounded-xl font-semibold text-xs sm:text-sm transition-all cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 sm:px-6 rounded-xl font-semibold text-xs sm:text-sm transition-all cursor-pointer ${
                 activeTab === "video"
                   ? "bg-gradient-to-r from-amber-500 to-orange-500 text-stone-950 shadow-lg font-bold"
                   : "text-stone-400 hover:text-stone-200 hover:bg-stone-800/60"
               }`}
             >
               <Flame className="w-4 h-4 text-orange-400" />
-              <span>૨. દૈનિક આરતી વિડીયો (15-30s Video)</span>
+              <span>૨. દૈનિક આરતી વિડીયો (Video)</span>
             </button>
           </div>
         </div>
