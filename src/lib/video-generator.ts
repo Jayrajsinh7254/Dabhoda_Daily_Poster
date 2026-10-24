@@ -8,6 +8,7 @@ import {
   PHOTO_FRAME,
   DATE_CONFIG,
   WEEKDAY_CONFIG,
+  drawAutoFitText,
   ImageTransform,
 } from './poster-generator';
 
@@ -159,22 +160,25 @@ function renderTemplateLayout(
   ctx.save();
   ctx.fillStyle = DATE_CONFIG.color;
   ctx.font = `${DATE_CONFIG.fontWeight} ${DATE_CONFIG.fontSize}px ${DATE_CONFIG.fontFamily}`;
-  ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left';
+  ctx.textBaseline = DATE_CONFIG.baseline;
+  ctx.textAlign = DATE_CONFIG.align;
   ctx.fillText(displayDate, DATE_CONFIG.x, DATE_CONFIG.y);
   ctx.restore();
 
-  // 5. Draw Dynamic Aarti Name in the red ribbon
-  ctx.save();
-  ctx.fillStyle = WEEKDAY_CONFIG.color;
-  ctx.font = `${WEEKDAY_CONFIG.fontWeight} ${WEEKDAY_CONFIG.fontSize}px ${WEEKDAY_CONFIG.fontFamily}`;
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = WEEKDAY_CONFIG.align;
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-  ctx.shadowBlur = 3;
-  ctx.shadowOffsetY = 1;
-  ctx.fillText(aartiName, WEEKDAY_CONFIG.x, WEEKDAY_CONFIG.y);
-  ctx.restore();
+  // 5. Draw Dynamic Aarti Name in the red ribbon with auto-fitting between lotuses
+  drawAutoFitText(
+    ctx,
+    aartiName,
+    WEEKDAY_CONFIG.x,
+    WEEKDAY_CONFIG.y,
+    WEEKDAY_CONFIG.maxAvailableWidth,
+    WEEKDAY_CONFIG.fontSize,
+    WEEKDAY_CONFIG.fontWeight,
+    WEEKDAY_CONFIG.fontFamily,
+    WEEKDAY_CONFIG.color,
+    WEEKDAY_CONFIG.minFontSize,
+    true
+  );
 }
 
 /**
@@ -406,13 +410,19 @@ function renderStoryLayout(
     ctx.stroke();
   });
 
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = "bold 21px 'Noto Sans Gujarati', 'Shruti', sans-serif";
-  ctx.fillStyle = '#ffffff';
-  ctx.shadowColor = 'rgba(0,0,0,0.55)';
-  ctx.shadowBlur = 4;
-  ctx.fillText(`🪔  ${aartiName}`, cx, ribY + ribH / 2);
+  drawAutoFitText(
+    ctx,
+    `🪔  ${aartiName}`,
+    cx,
+    ribY + ribH / 2,
+    W - 32,
+    21,
+    'bold',
+    "'Noto Sans Gujarati', 'Shruti', sans-serif",
+    '#ffffff',
+    15,
+    true
+  );
   ctx.restore();
 
   // Bottom strip: Handles & WhatsApp

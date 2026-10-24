@@ -170,6 +170,26 @@ export default function PosterGenerator({ hideHeader = false }: { hideHeader?: b
     }
   }, [transform, dateInfo, drawFrame]);
 
+  // Re-draw canvas when document webfonts (Noto Sans Gujarati) finish loading on mobile devices
+  useEffect(() => {
+    if (typeof document !== "undefined" && "fonts" in document) {
+      document.fonts.ready.then(() => {
+        if (cachedPhotoRef.current && cachedOverlayRef.current) {
+          drawFrame();
+        }
+      });
+      const handleFontsLoaded = () => {
+        if (cachedPhotoRef.current && cachedOverlayRef.current) {
+          drawFrame();
+        }
+      };
+      document.fonts.addEventListener("loadingdone", handleFontsLoaded);
+      return () => {
+        document.fonts.removeEventListener("loadingdone", handleFontsLoaded);
+      };
+    }
+  }, [drawFrame]);
+
   // Transform controls
   const updateZoom = (delta: number) => {
     setTransform((prev) => ({

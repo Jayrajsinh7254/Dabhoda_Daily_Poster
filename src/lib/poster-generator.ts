@@ -14,24 +14,68 @@ export const PHOTO_FRAME = {
 
 // Date text positioning inside the date pill
 export const DATE_CONFIG = {
-  x: 542,
-  y: 1196,
-  fontSize: 32,
+  x: 605,
+  y: 1187,
+  fontSize: 30,
   fontFamily: "'Georgia', 'Times New Roman', serif",
   color: '#16161b',
   fontWeight: 'bold',
+  align: 'center' as CanvasTextAlign,
+  baseline: 'middle' as CanvasTextBaseline,
 };
 
 // Weekday text positioning inside the red ribbon
 export const WEEKDAY_CONFIG = {
-  x: 552,
-  y: 1251,
-  fontSize: 38,
+  x: 552.5,
+  y: 1249,
+  maxAvailableWidth: 205, // Clear width between left lotus (ends ~445) and right lotus (starts ~660)
+  fontSize: 36,
+  minFontSize: 24,
   fontFamily: "'Noto Sans Gujarati', 'Shruti', 'Gujarati MT', sans-serif",
   color: '#ffffff',
   fontWeight: 'bold',
   align: 'center' as CanvasTextAlign,
+  baseline: 'middle' as CanvasTextBaseline,
 };
+
+/**
+ * Draw auto-fitted single line text within a maximum width boundary
+ */
+export function drawAutoFitText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  centerX: number,
+  centerY: number,
+  maxWidth: number,
+  baseFontSize: number,
+  fontWeight: string,
+  fontFamily: string,
+  color: string,
+  minFontSize: number = 22,
+  shadow: boolean = false
+): void {
+  ctx.save();
+  let fontSize = baseFontSize;
+  ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+  const measuredWidth = ctx.measureText(text).width;
+
+  if (measuredWidth > maxWidth && measuredWidth > 0) {
+    const scale = maxWidth / measuredWidth;
+    fontSize = Math.max(minFontSize, Math.floor(baseFontSize * scale));
+    ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+  }
+
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (shadow) {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+    ctx.shadowBlur = 3;
+    ctx.shadowOffsetY = 1;
+  }
+  ctx.fillText(text, centerX, centerY);
+  ctx.restore();
+}
 
 // Gujarati weekday names
 export const GUJARATI_WEEKDAYS: Record<string, string> = {
@@ -218,26 +262,29 @@ export function renderPosterToCanvas(
   // 3. Draw the master template overlay (frames, logo, typography, icons)
   ctx.drawImage(overlayImg, 0, 0, POSTER_WIDTH, POSTER_HEIGHT);
 
-  // 4. Draw the Dynamic Date text
+  // 4. Draw the Dynamic Date text inside date pill
   ctx.save();
   ctx.fillStyle = DATE_CONFIG.color;
   ctx.font = `${DATE_CONFIG.fontWeight} ${DATE_CONFIG.fontSize}px ${DATE_CONFIG.fontFamily}`;
-  ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left';
+  ctx.textBaseline = DATE_CONFIG.baseline;
+  ctx.textAlign = DATE_CONFIG.align;
   ctx.fillText(dateInfo.displayDate, DATE_CONFIG.x, DATE_CONFIG.y);
   ctx.restore();
 
-  // 5. Draw the Dynamic Gujarati Weekday text
-  ctx.save();
-  ctx.fillStyle = WEEKDAY_CONFIG.color;
-  ctx.font = `${WEEKDAY_CONFIG.fontWeight} ${WEEKDAY_CONFIG.fontSize}px ${WEEKDAY_CONFIG.fontFamily}`;
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = WEEKDAY_CONFIG.align;
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-  ctx.shadowBlur = 3;
-  ctx.shadowOffsetY = 1;
-  ctx.fillText(dateInfo.weekdayGujarati, WEEKDAY_CONFIG.x, WEEKDAY_CONFIG.y);
-  ctx.restore();
+  // 5. Draw the Dynamic Gujarati Weekday text with auto-fitting between ribbon lotuses
+  drawAutoFitText(
+    ctx,
+    dateInfo.weekdayGujarati,
+    WEEKDAY_CONFIG.x,
+    WEEKDAY_CONFIG.y,
+    WEEKDAY_CONFIG.maxAvailableWidth,
+    WEEKDAY_CONFIG.fontSize,
+    WEEKDAY_CONFIG.fontWeight,
+    WEEKDAY_CONFIG.fontFamily,
+    WEEKDAY_CONFIG.color,
+    WEEKDAY_CONFIG.minFontSize,
+    true
+  );
 }
 
 /**

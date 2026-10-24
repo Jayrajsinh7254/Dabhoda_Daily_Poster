@@ -245,6 +245,22 @@ export default function AartiVideoGenerator() {
     if (!isPlaying) drawCurrentFrame();
   }, [currentAartiText, dateInfo.displayDate, transform, layoutMode, drawCurrentFrame, isPlaying]);
 
+  // Re-draw canvas when document webfonts (Noto Sans Gujarati) finish loading on mobile devices
+  useEffect(() => {
+    if (typeof document !== "undefined" && "fonts" in document) {
+      document.fonts.ready.then(() => {
+        drawCurrentFrame();
+      });
+      const handleFontsLoaded = () => {
+        drawCurrentFrame();
+      };
+      document.fonts.addEventListener("loadingdone", handleFontsLoaded);
+      return () => {
+        document.fonts.removeEventListener("loadingdone", handleFontsLoaded);
+      };
+    }
+  }, [drawCurrentFrame]);
+
   // 6. Playback controls
   const togglePlay = () => {
     const vid = videoRef.current;
